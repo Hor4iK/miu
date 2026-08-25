@@ -152,7 +152,7 @@ function triggerEvent(type,manual=false){
             stats.mood=clamp(stats.mood-5);
             break;
         case EVENTS.SNUGGLE:
-            showEvent("СОН В ОБНИМКУ","Малыши сами нашли коробку. Не буди их без причины.");
+            showEvent("СОН","Малыши спят. Не буди их без причины.");
             go(cat,305,530,"sleeping","Спит в обнимку");
             go(dragon,318,540,"sleeping","Спит в обнимку");
             break;
