@@ -166,11 +166,6 @@ function triggerEvent(type,manual=false){
             showEvent("КОШКА ЗАСТРЯЛА","Кошка засунула голову в коробку. Помоги: тапни коробку или миску.");
             go(cat,309,536,"stuck","Застряла");
             break;
-        case EVENTS.ROLE:
-            showEvent("ОБМЕН РОЛЯМИ","Кошка пытается дуть огнём. Просто подожди — вмешиваться нельзя.");
-            go(cat,210,385,"role","Дует огнём");
-            go(dragon,250,390,"shocked","В шоке");
-            break;
         case EVENTS.BLACKOUT:
             candleLit=false;blackoutProgress=0;
             showEvent("ОТКЛЮЧЕНИЕ СВЕТА В ЖК","Почти ничего не видно. Искры дракончика — единственный фонарик. Найди кружку, коробку или свечу.");
@@ -202,7 +197,7 @@ function triggerEvent(type,manual=false){
             go(cat,285,90,"walking","Несёт воду");
             break;
         case EVENTS.WARM:
-            showEvent("ДРАКОНЧИК ГРЕЕТ КОШКУ","Он сам заметил, что кошке холодно. Наблюдай или тапни по любому персонажу, чтобы прервать.");
+            showEvent("ДРАКОНЧИК ГРЕЕТ КОШКУ","Он сам заметил, что кошке холодно.");
             go(dragon,cat.x+18,cat.y-5,"warming","Греет крылом");
             // Золотая пыль — небольшие частицы, которые кружатся вокруг питомцев.
             warmParticles=Array.from({length:22},()=>({
@@ -229,7 +224,6 @@ function randomEvent(){
     else if(r<.25)triggerEvent(EVENTS.SNUGGLE);
     else if(r<.32)triggerEvent(EVENTS.PHONE);
     else if(r<.39)triggerEvent(EVENTS.STUCK);
-    else if(r<.46)triggerEvent(EVENTS.ROLE);
     else if(r<.52)triggerEvent(EVENTS.GROOM);
     else if(r<.58)triggerEvent(EVENTS.TABLE);
     else if(r<.64)triggerEvent(EVENTS.TOY);
@@ -286,9 +280,6 @@ function updateEvents(now,dt){
     }
     if(activeEvent===EVENTS.WINDOW && t>8){
         stats.mood=clamp(stats.mood+7);cat.activity="Мурлычет";finishEvent()
-    }
-    if(activeEvent===EVENTS.ROLE && t>7){
-        stats.friendship=clamp(stats.friendship+8);stats.mood=clamp(stats.mood+8);finishEvent()
     }
     if(activeEvent===EVENTS.TABLE && t>10){
         cat.activity="Не достаёт";stats.mood=clamp(stats.mood-2);
@@ -675,7 +666,6 @@ canvas.addEventListener("pointerdown",e=>{
     if(activeEvent===EVENTS.TOY && hiddenToy && Math.hypot(x-hiddenToy.x,y-hiddenToy.y)<28){
         stats.friendship=clamp(stats.friendship+7);stats.mood=clamp(stats.mood+5);stats.hunger=clamp(stats.hunger+2);toastMsg("Игрушка найдена!");finishEvent();return;
     }
-    if(activeEvent===EVENTS.ROLE)return;
 
     // Во время согревания тап по любому персонажу немедленно прерывает событие.
     if(activeEvent===EVENTS.WARM){
