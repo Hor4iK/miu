@@ -247,7 +247,7 @@ function autonomousLife(now,dt){
         dragon.taskUntil=now+3500+Math.random()*5500;
     }
     move(cat,dt);move(dragon,dt);
-    if(stats.energy<25 && stats.warmth<45) triggerEvent(EVENTS.WARM);
+    if(stats.energy<25 && stats.warmth<5) triggerEvent(EVENTS.WARM);
     if(stats.energy<18) triggerEvent(EVENTS.SNUGGLE);
 }
 
@@ -303,6 +303,7 @@ function updateEvents(now,dt){
             p.rise+=dt*.35;
             if(p.rise>1)p.rise=0;
         });
+        stats.warmth=clamp(stats.warmth+12, 20);
         if(t>10){
             stats.warmth=clamp(stats.warmth+12);
             stats.mood=clamp(stats.mood+5);
@@ -636,11 +637,11 @@ canvas.addEventListener("pointerdown",e=>{
         candleLit=true;stats.mood=clamp(stats.mood+10);stats.warmth=clamp(stats.warmth+8);stats.friendship=clamp(stats.friendship+4);toastMsg("Свеча снова горит.");finishEvent();return;
     }
     if(activeEvent===EVENTS.SNUGGLE){
-        stats.friendship=clamp(stats.friendship+2);toastMsg("Шшш… они снова прижались.");return;
-    }
-    if(activeEvent===EVENTS.WARM){
-        stats.warmth=clamp(stats.warmth+12, 20);
-        return;
+        stats.friendship=clamp(stats.friendship+2);toastMsg("Шшш… они снова прижались.");
+        if(Math.hypot(x-cat.x,y-cat.y)<40 || Math.hypot(x-dragon.x,y-dragon.y)<40){
+            finishEvent();
+            return;
+        }return;
     }
     if(activeEvent===EVENTS.PHONE && hit(zones.tv,x,y,20)){
         phoneRinging=false;stats.mood=clamp(stats.mood+3);toastMsg("«Ваш заказ готов…»");finishEvent();return;
@@ -711,11 +712,11 @@ function update(now){
     }
 
     // Медленная жизнь показателей.
-    stats.hunger=clamp(stats.hunger-.018);
-    stats.mood=clamp(stats.mood-.010);
-    stats.energy=clamp(stats.energy-.008);
-    stats.cleanliness=clamp(stats.cleanliness-.006);
-    stats.warmth=clamp(stats.warmth-.005);
+    stats.hunger=clamp(stats.hunger-.0018);
+    stats.mood=clamp(stats.mood-.0010);
+    stats.energy=clamp(stats.energy-.0008);
+    stats.cleanliness=clamp(stats.cleanliness-.0006);
+    stats.warmth=clamp(stats.warmth-.0005);
     if(stats.hunger>55&&stats.mood>55&&stats.warmth>50)stats.friendship=clamp(stats.friendship+.004);
     if(stats.hunger<20||stats.mood<20)stats.friendship=clamp(stats.friendship-.02);
 
