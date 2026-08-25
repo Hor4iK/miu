@@ -11,7 +11,7 @@ from aiogram.filters import CommandStart
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 
 # Токен бота (рекомендуется передавать через переменную окружения)
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8610472095:AAEaeDn6Y36r9Ov0-li0jFgDnfNToYSPpfQ")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "kkk")
 
 # URL вашего WebApp (GitHub Pages, Vercel и т.д.)
 WEBAPP_URL = os.getenv("WEBAPP_URL", "https://hor4ik.github.io/miu/")
