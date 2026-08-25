@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Miu</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #111; font-family: monospace; }
+    #canvas-container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+    canvas { background: #e6e6e6; display: block; max-width: 100%; max-height: 100%; }
+    
+    /* Overlay UI */
+    .hud { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+    .stat-row { display: flex; align-items: center; justify-content: space-between; color: #111; font-size: 11px; font-weight: bold; }
+    .stat-bar-bg { width: 60%; height: 8px; border: 1px solid #111; background: #fff; position: relative; }
+    .stat-bar-fill { height: 100%; background: #111; width: 50%; transition: width 0.3s; }
+    
+    .event-indicator { position: absolute; top: 10px; right: 10px; width: 16px; height: 16px; border-radius: 50%; border: 1px solid #000; display: none; }
+    .event-active { display: block; animation: pulse 1s infinite alternate; }
+    @keyframes pulse { from { background: #fff; } to { background: #000; } }
+
+    /* Radial Menu */
+    .radial-menu { position: absolute; display: none; width: 120px; height: 120px; border-radius: 50%; border: 1px dashed #111; pointer-events: auto; transform: translate(-50%, -50%); }
+    .menu-item { position: absolute; width: 30px; height: 30px; border: 1px solid #111; background: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; }
+    .item-top { top: -15px; left: 45px; }
+    .item-right { top: 45px; right: -15px; }
+    .item-bottom { bottom: -15px; left: 45px; }
+    .item-left { top: 45px; left: -15px; }
+  </style>
+</head>
+<body>
+
+<div id="canvas-container">
+  <canvas id="gameCanvas"></canvas>
+  
+  <!-- HUD Stats -->
+  <div class="hud">
+    <div class="stat-row"><span>Голод</span><div class="stat-bar-bg"><div id="bar-hunger" class="stat-bar-fill"></div></div></div>
+    <div class="stat-row"><span>Настроение</span><div class="stat-bar-bg"><div id="bar-mood" class="stat-bar-fill"></div></div></div>
+    <div class="stat-row"><span>Усталость</span><div class="stat-bar-bg"><div id="bar-fatigue" class="stat-bar-fill"></div></div></div>
+    <div class="stat-row"><span>Дружба</span><div class="stat-bar-bg"><div id="bar-friendship" class="stat-bar-fill"></div></div></div>
+    <div class="stat-row"><span>Чистота</span><div class="stat-bar-bg"><div id="bar-cleanliness" class="stat-bar-fill"></div></div></div>
+    <div class="stat-row"><span>Тепло</span><div class="stat-bar-bg"><div id="bar-warmth" class="stat-bar-fill"></div></div></div>
+  </div>
+
+  <div id="eventInd" class="event-indicator"></div>
+
+  <!-- Radial Menu -->
+  <div id="radialMenu" class="radial-menu">
+    <div class="menu-item item-top" onclick="game.handleMenu('feed')">🐟</div>
+    <div class="menu-item item-right" onclick="game.handleMenu('clean')">🧹</div>
+    <div class="menu-item item-bottom" onclick="game.handleMenu('play')">🎾</div>
+    <div class="menu-item item-left" onclick="game.handleMenu('light')">🕯️</div>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) tg.expand();
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Responsive Canvas
+function resizeCanvas() {
+  canvas.width = Math.min(window.innerWidth, 480);
+  canvas.height = Math.min(window.innerHeight, 800);
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+// Engine & State
+class Game {
+  constructor() {
+    this.stats = JSON.parse(localStorage.getItem('tamagotchi_stats')) || {
+      hunger: 80, mood: 70, fatigue: 20, friendship: 50, cleanliness: 90, warmth: 80
+    };
+    
+    this.state = 'IDLE'; // IDLE, CANDLE_OUT, SLEEPING, BLACKOUT, POSTMAN
+    this.activeSeeds = [];
+    this.candleLit = true;
+    this.blackout = false;
+    this.menuTarget = null;
+    this.lastTick = Date.now();
+
+    // Position setup
+    this.cat = { x: canvas.width * 0.35, y: canvas.height * 0.65, size: 45 };
+    this.dragon = { x: canvas.width * 0.2, y: canvas.height * 0.68, size: 25 };
+    
+    this.bindEvents();
+    this.startLoop();
+  }
+
+  save() {
+    localStorage.setItem('tamagotchi_stats', JSON.stringify(this.stats));
+  }
+
+  updateStats() {
+    const now = Date.now();
+    const dt = (now - this.lastTick) / 1000;
+    this.lastTick = now;
+
+    // Passive decay
+    this.stats.hunger = Math.max(0, this.stats.hunger - dt * 0.5);
+    this.stats.mood = Math.max(0, this.stats.mood - dt * 0.3);
+    this.stats.cleanliness = Math.max(0, this.stats.cleanliness - dt * 0.2);
+    this.stats.fatigue = Math.min(100, this.stats.fatigue + dt * 0.4);
+
+    if (this.state === 'SLEEPING') {
+      this.stats.fatigue = Math.max(0, this.stats.fatigue - dt * 2);
+      this.stats.friendship = Math.min(100, this.stats.friendship + dt * 0.2);
+      if (this.stats.fatigue === 0) this.state = 'IDLE';
+    }
+
+    this.renderHUD();
+    this.save();
+  }
+
+  triggerRandomEvent() {
+    if (this.state !== 'IDLE') return;
+    const r = Math.random();
+    if (r < 0.2 && this.candleLit) {
+      this.state = 'CANDLE_OUT';
+      this.candleLit = false;
+      this.stats.mood -= 10;
+    } else if (r < 0.35 && !this.blackout) {
+      this.state = 'BLACKOUT';
+      this.blackout = true;
+      setTimeout(() => { this.blackout = false; if(this.state==='BLACKOUT') this.state='IDLE'; }, 15000);
+    } else if (this.stats.fatigue > 75) {
+      this.state = 'SLEEPING';
+    }
+  }
+
+  renderHUD() {
+    document.getElementById('bar-hunger').style.width = this.stats.hunger + '%';
+    document.getElementById('bar-mood').style.width = this.stats.mood + '%';
+    document.getElementById('bar-fatigue').style.width = this.stats.fatigue + '%';
+    document.getElementById('bar-friendship').style.width = this.stats.friendship + '%';
+    document.getElementById('bar-cleanliness').style.width = this.stats.cleanliness + '%';
+    document.getElementById('bar-warmth').style.width = this.stats.warmth + '%';
+
+    const ind = document.getElementById('eventInd');
+    if (this.state !== 'IDLE') ind.classList.add('event-active');
+    else ind.classList.remove('event-active');
+  }
+
+  bindEvents() {
+    canvas.addEventListener('click', (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+
+      // Minigame clicks
+      if (this.activeSeeds.length > 0) {
+        this.activeSeeds = this.activeSeeds.filter(s => Math.hypot(s.x - x, s.y - y) > 20);
+        if (this.activeSeeds.length === 0) {
+          this.stats.hunger = Math.min(100, this.stats.hunger + 25);
+          this.stats.mood = Math.min(100, this.stats.mood + 15);
+        }
+        return;
+      }
+
+      // Event interactions
+      if (this.state === 'CANDLE_OUT') {
+        this.candleLit = true;
+        this.state = 'IDLE';
+        this.stats.mood += 5;
+        return;
+      }
+
+      if (this.state === 'SLEEPING') {
+        this.stats.friendship = Math.max(0, this.stats.friendship - 2);
+        return;
+      }
+
+      // Toggle Radial Menu
+      const menu = document.getElementById('radialMenu');
+      if (menu.style.display === 'block') {
+        menu.style.display = 'none';
+      } else {
+        menu.style.display = 'block';
+        menu.style.left = e.clientX + 'px';
+        menu.style.top = e.clientY + 'px';
+      }
+    });
+  }
+
+  handleMenu(action) {
+    document.getElementById('radialMenu').style.display = 'none';
+    if (action === 'feed') {
+      // Spawn seeds minigame
+      this.activeSeeds = [
+        {x: canvas.width * 0.4, y: canvas.height * 0.7},
+        {x: canvas.width * 0.5, y: canvas.height * 0.72},
+        {x: canvas.width * 0.6, y: canvas.height * 0.68}
+      ];
+    } else if (action === 'clean') {
+      this.stats.cleanliness = Math.min(100, this.stats.cleanliness + 30);
+      this.stats.friendship = Math.min(100, this.stats.friendship + 2);
+    } else if (action === 'light') {
+      this.candleLit = true;
+      if (this.state === 'CANDLE_OUT') this.state = 'IDLE';
+    } else if (action === 'play') {
+      this.stats.mood = Math.min(100, this.stats.mood + 20);
+      this.stats.fatigue = Math.min(100, this.stats.fatigue + 10);
+    }
+  }
+
+  // Visuals: Engraving Hatching Style
+  drawHatching(x, y, w, h, step = 4) {
+    ctx.strokeStyle = '#111';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let i = -h; i < w; i += step) {
+      ctx.moveTo(x + i, y);
+      ctx.lineTo(x + i + h, y + h);
+    }
+    ctx.stroke();
+  }
+
+  draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    // Background style
+    ctx.fillStyle = this.blackout ? '#0a0a0a' : '#e6e6e6';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (!this.blackout) {
+      // Floor Line
+      ctx.strokeStyle = '#111';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, canvas.height * 0.75);
+      ctx.lineTo(canvas.width, canvas.height * 0.75);
+      ctx.stroke();
+
+      // Large Adult Furniture (Table Legs)
+      ctx.fillRect(canvas.width * 0.7, canvas.height * 0.2, 12, canvas.height * 0.55);
+      
+      // Box
+      ctx.strokeRect(canvas.width * 0.1, canvas.height * 0.65, 70, 50);
+      this.drawHatching(canvas.width * 0.1, canvas.height * 0.65, 70, 50, 6);
+    }
+
+    // Candle Light Effect
+    if (!this.candleLit || this.blackout) {
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // Characters (Procedural Ink Shapes)
+    this.drawCat();
+    this.drawDragon();
+
+    // Minigame: Seeds
+    this.activeSeeds.forEach(s => {
+      ctx.fillStyle = '#000';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
+  }
+
+  drawCat() {
+    ctx.save();
+    ctx.translate(this.cat.x, this.cat.y);
+    
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
+
+    // Body
+    ctx.beginPath();
+    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Ears
+    ctx.beginPath();
+    ctx.moveTo(-15, -15); ctx.lineTo(-22, -35); ctx.lineTo(-5, -20);
+    ctx.moveTo(15, -15); ctx.lineTo(22, -35); ctx.lineTo(5, -20);
+    ctx.fill(); ctx.stroke();
+
+    // Big Eyes
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(-8, -4, 4, 0, Math.PI * 2);
+    ctx.arc(8, -4, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hatching shade
+    this.drawHatching(-15, 5, 30, 10, 5);
+
+    ctx.restore();
+  }
+
+  drawDragon() {
+    ctx.save();
+    ctx.translate(this.dragon.x, this.dragon.y);
+
+    ctx.fillStyle = '#222';
+    ctx.strokeStyle = '#000';
+
+    // Angular Silhouette
+    ctx.beginPath();
+    ctx.moveTo(-10, 10);
+    ctx.lineTo(0, -20);
+    ctx.lineTo(12, 10);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // Spark / Torch Light in Dark
+    if (!this.candleLit || this.blackout) {
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(0, -25, 4 + Math.random() * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  startLoop() {
+    setInterval(() => this.triggerRandomEvent(), 7000);
+    const loop = () => {
+      this.updateStats();
+      this.draw();
+      requestAnimationFrame(loop);
+    };
+    loop();
+  }
+}
+
+const game = new Game();
+</script>
+</body>
+</html>
