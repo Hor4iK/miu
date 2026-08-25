@@ -108,6 +108,7 @@ let last=performance.now();
 let lastEventAt=performance.now();
 let eventCooldown=10000;
 let dailyWindowDone=false;
+let warmParticles=[];
 let lastDay=Math.floor(Date.now()/86400000);
 
 const EVENTS={
@@ -120,7 +121,7 @@ function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)}
 function go(ch,x,y,state="walking",activity="Идёт"){ch.targetX=x;ch.targetY=y;ch.state=state;ch.activity=activity}
 function finishEvent(){
     activeEvent=null;hideEvent();seeds=[];parcel=null;hiddenToy=null;
-    fireProgress=0;blackoutProgress=0;
+    fireProgress=0;blackoutProgress=0;warmParticles=[];
     cat.state="idle";dragon.state="idle";
     cat.activity="Осматривается";dragon.activity="Осматривается";
 }
@@ -201,8 +202,17 @@ function triggerEvent(type,manual=false){
             go(cat,285,90,"walking","Несёт воду");
             break;
         case EVENTS.WARM:
-            showEvent("ДРАКОНЧИК ГРЕЕТ КОШКУ","Он сам заметил, что кошке холодно. Просто наблюдай.");
+            showEvent("ДРАКОНЧИК ГРЕЕТ КОШКУ","Он сам заметил, что кошке холодно. Наблюдай или тапни по любому персонажу, чтобы прервать.");
             go(dragon,cat.x+18,cat.y-5,"warming","Греет крылом");
+            // Золотая пыль — небольшие частицы, которые кружатся вокруг питомцев.
+            warmParticles=Array.from({length:22},()=>({
+                angle:Math.random()*Math.PI*2,
+                radius:8+Math.random()*24,
+                speed:(.35+Math.random()*.8)*(Math.random()<.5?-1:1),
+                rise:.15+Math.random()*.35,
+                size:1+Math.random()*1.8,
+                alpha:.35+Math.random()*.55
+            }));
             break;
     }
 }
@@ -292,6 +302,23 @@ function updateEvents(now,dt){
     }
     if(activeEvent===EVENTS.PHONE && t>10 && !phoneRinging){
         stats.mood=clamp(stats.mood-2);finishEvent()
+    }
+    if(activeEvent===EVENTS.WARM){
+        // Событие не может зависнуть навсегда: автоматически завершается через 10 секунд.
+        warmParticles.forEach(p=>{
+            p.angle+=p.speed*dt;
+            p.radius+=Math.sin((t+p.angle)*2)*dt*.7;
+            p.radius=clamp(p.radius,8,34);
+            p.rise+=dt*.35;
+            if(p.rise>1)p.rise=0;
+        });
+        if(t>10){
+            stats.warmth=clamp(stats.warmth+12);
+            stats.mood=clamp(stats.mood+5);
+            stats.friendship=clamp(stats.friendship+3);
+            toastMsg("Кошке стало тепло ☀");
+            finishEvent();
+        }
     }
 }
 
@@ -527,6 +554,26 @@ function drawDragon(){
     ctx.restore();
 }
 
+function drawWarmParticles(){
+    if(activeEvent!==EVENTS.WARM || !warmParticles.length)return;
+    const cx=(cat.x+dragon.x)/2, cy=(cat.y+dragon.y)/2-5;
+    ctx.save();
+    warmParticles.forEach((p,i)=>{
+        const a=p.angle + i*.17;
+        const x=cx+Math.cos(a)*p.radius;
+        const y=cy+Math.sin(a)*p.radius*.62-p.rise*12;
+        const glow=0.65+Math.sin((p.angle+i)*3)*.2;
+        ctx.globalAlpha=p.alpha*glow;
+        ctx.fillStyle="#f6d56f";
+        ctx.shadowColor="#ffe9a3";
+        ctx.shadowBlur=5;
+        ctx.beginPath();
+        ctx.arc(x,y,p.size,0,Math.PI*2);
+        ctx.fill();
+    });
+    ctx.restore();
+}
+
 function drawObjectsOverlay(){
     // Предметы остаются частью иллюстрации; поверх рисуем только интерактивные подсказки.
     if(activeEvent===EVENTS.POSTMAN && parcel){
@@ -626,6 +673,17 @@ canvas.addEventListener("pointerdown",e=>{
     }
     if(activeEvent===EVENTS.ROLE)return;
 
+    // Во время согревания тап по любому персонажу немедленно прерывает событие.
+    if(activeEvent===EVENTS.WARM){
+        if(Math.hypot(x-cat.x,y-cat.y)<40 || Math.hypot(x-dragon.x,y-dragon.y)<40){
+            stats.friendship=clamp(stats.friendship+1);
+            toastMsg("Согревание прервано.");
+            finishEvent();
+            return;
+        }
+        return;
+    }
+
     // Персонажи: игрок помогает, но не командует ими.
     if(Math.hypot(x-cat.x,y-cat.y)<34){
         radial={x:cat.x,y:cat.y-15,options:[
@@ -677,6 +735,7 @@ function frame(now){
     drawObjectsOverlay();
     drawCat();
     drawDragon();
+    drawWarmParticles();
     drawUI();
     drawRadial();
     requestAnimationFrame(frame);
