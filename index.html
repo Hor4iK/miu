@@ -2,216 +2,157 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Miu</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>miu</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
-    body, html { width: 100%; height: 100%; overflow: hidden; background: #111; font-family: monospace; }
-    #canvas-container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
-    canvas { background: #e6e6e6; display: block; max-width: 100%; max-height: 100%; }
+    body, html { width: 100%; height: 100%; overflow: hidden; background: #050505; font-family: monospace; }
+    #game-container { position: relative; width: 100vw; height: 100vh; display: flex; justify-content: center; align-items: center; }
+    canvas { background: #e0e0e0; display: block; }
     
-    /* Overlay UI */
-    .hud { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
-    .stat-row { display: flex; align-items: center; justify-content: space-between; color: #111; font-size: 11px; font-weight: bold; }
-    .stat-bar-bg { width: 60%; height: 8px; border: 1px solid #111; background: #fff; position: relative; }
-    .stat-bar-fill { height: 100%; background: #111; width: 50%; transition: width 0.3s; }
+    /* HUD UI */
+    .hud { position: absolute; top: 12px; left: 12px; right: 12px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+    .stat-row { display: flex; align-items: center; justify-content: space-between; color: #000; font-size: 10px; font-weight: bold; background: rgba(255,255,255,0.85); padding: 4px 8px; border: 1px solid #000; }
+    .stat-bar-bg { width: 50%; height: 8px; border: 1px solid #000; background: #fff; }
+    .stat-bar-fill { height: 100%; background: #000; width: 50%; transition: width 0.2s; }
     
-    .event-indicator { position: absolute; top: 10px; right: 10px; width: 16px; height: 16px; border-radius: 50%; border: 1px solid #000; display: none; }
-    .event-active { display: block; animation: pulse 1s infinite alternate; }
-    @keyframes pulse { from { background: #fff; } to { background: #000; } }
+    /* Event Banner */
+    #event-banner { position: absolute; top: 120px; left: 50%; transform: translateX(-50%); background: #000; color: #fff; padding: 8px 16px; font-size: 11px; border: 1px solid #fff; display: none; text-align: center; }
 
-    /* Radial Menu */
-    .radial-menu { position: absolute; display: none; width: 120px; height: 120px; border-radius: 50%; border: 1px dashed #111; pointer-events: auto; transform: translate(-50%, -50%); }
-    .menu-item { position: absolute; width: 30px; height: 30px; border: 1px solid #111; background: #fff; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; cursor: pointer; }
-    .item-top { top: -15px; left: 45px; }
-    .item-right { top: 45px; right: -15px; }
-    .item-bottom { bottom: -15px; left: 45px; }
-    .item-left { top: 45px; left: -15px; }
+    /* Controls */
+    .controls { position: absolute; bottom: 20px; left: 0; right: 0; display: flex; justify-content: center; gap: 10px; }
+    .action-btn { background: #fff; color: #000; border: 2px solid #000; padding: 12px 18px; font-weight: bold; font-family: monospace; cursor: pointer; border-radius: 4px; box-shadow: 3px 3px 0 #000; }
+    .action-btn:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 #000; }
   </style>
 </head>
 <body>
 
-<div id="canvas-container">
+<div id="game-container">
   <canvas id="gameCanvas"></canvas>
   
-  <!-- HUD Stats -->
   <div class="hud">
-    <div class="stat-row"><span>Голод</span><div class="stat-bar-bg"><div id="bar-hunger" class="stat-bar-fill"></div></div></div>
-    <div class="stat-row"><span>Настроение</span><div class="stat-bar-bg"><div id="bar-mood" class="stat-bar-fill"></div></div></div>
-    <div class="stat-row"><span>Усталость</span><div class="stat-bar-bg"><div id="bar-fatigue" class="stat-bar-fill"></div></div></div>
-    <div class="stat-row"><span>Дружба</span><div class="stat-bar-bg"><div id="bar-friendship" class="stat-bar-fill"></div></div></div>
-    <div class="stat-row"><span>Чистота</span><div class="stat-bar-bg"><div id="bar-cleanliness" class="stat-bar-fill"></div></div></div>
-    <div class="stat-row"><span>Тепло</span><div class="stat-bar-bg"><div id="bar-warmth" class="stat-bar-fill"></div></div></div>
+    <div class="stat-row"><span>ГОЛОД</span><div class="stat-bar-bg"><div id="bar-hunger" class="stat-bar-fill"></div></div></div>
+    <div class="stat-row"><span>НАСТРОЕНИЕ</span><div class="stat-bar-bg"><div id="bar-mood" class="stat-bar-fill"></div></div></div>
+    <div class="stat-row"><span>УСТАЛОСТЬ</span><div class="stat-bar-bg"><div id="bar-fatigue" class="stat-bar-fill"></div></div></div>
+    <div class="stat-row"><span>ДРУЖБА</span><div class="stat-bar-bg"><div id="bar-friendship" class="stat-bar-fill"></div></div></div>
   </div>
 
-  <div id="eventInd" class="event-indicator"></div>
+  <div id="event-banner">Ивент</div>
 
-  <!-- Radial Menu -->
-  <div id="radialMenu" class="radial-menu">
-    <div class="menu-item item-top" onclick="game.handleMenu('feed')">🐟</div>
-    <div class="menu-item item-right" onclick="game.handleMenu('clean')">🧹</div>
-    <div class="menu-item item-bottom" onclick="game.handleMenu('play')">🎾</div>
-    <div class="menu-item item-left" onclick="game.handleMenu('light')">🕯️</div>
+  <div class="controls">
+    <button class="action-btn" onclick="game.interact()">[ Позвать / Погладить ]</button>
+    <button class="action-btn" onclick="game.toggleCandle()">[ Свеча ]</button>
   </div>
 </div>
 
 <script>
 const tg = window.Telegram?.WebApp;
-if (tg) tg.expand();
+if (tg) { tg.expand(); tg.ready(); }
 
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// Responsive Canvas
-function resizeCanvas() {
-  canvas.width = Math.min(window.innerWidth, 480);
-  canvas.height = Math.min(window.innerHeight, 800);
+function initCanvasSize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 }
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+initCanvasSize();
+window.addEventListener('resize', initCanvasSize);
 
-// Engine & State
 class Game {
   constructor() {
-    this.stats = JSON.parse(localStorage.getItem('tamagotchi_stats')) || {
-      hunger: 80, mood: 70, fatigue: 20, friendship: 50, cleanliness: 90, warmth: 80
-    };
-    
-    this.state = 'IDLE'; // IDLE, CANDLE_OUT, SLEEPING, BLACKOUT, POSTMAN
-    this.activeSeeds = [];
+    this.stats = { hunger: 60, mood: 80, fatigue: 20, friendship: 50 };
+    this.eventState = 'NONE';
     this.candleLit = true;
-    this.blackout = false;
-    this.menuTarget = null;
-    this.lastTick = Date.now();
-
-    // Position setup
-    this.cat = { x: canvas.width * 0.35, y: canvas.height * 0.65, size: 45 };
-    this.dragon = { x: canvas.width * 0.2, y: canvas.height * 0.68, size: 25 };
+    this.time = 0; // Счётчик кадров для анимации
     
+    // Позиции и физика персонажей
+    this.floorY = canvas.height * 0.72;
+    
+    this.cat = {
+      x: canvas.width * 0.6,
+      y: this.floorY,
+      targetX: canvas.width * 0.6,
+      vx: 0,
+      isBlinking: false
+    };
+
+    this.dragon = {
+      x: canvas.width * 0.3,
+      y: this.floorY,
+      targetX: canvas.width * 0.3,
+      vx: 0
+    };
+
     this.bindEvents();
-    this.startLoop();
-  }
-
-  save() {
-    localStorage.setItem('tamagotchi_stats', JSON.stringify(this.stats));
-  }
-
-  updateStats() {
-    const now = Date.now();
-    const dt = (now - this.lastTick) / 1000;
-    this.lastTick = now;
-
-    // Passive decay
-    this.stats.hunger = Math.max(0, this.stats.hunger - dt * 0.5);
-    this.stats.mood = Math.max(0, this.stats.mood - dt * 0.3);
-    this.stats.cleanliness = Math.max(0, this.stats.cleanliness - dt * 0.2);
-    this.stats.fatigue = Math.min(100, this.stats.fatigue + dt * 0.4);
-
-    if (this.state === 'SLEEPING') {
-      this.stats.fatigue = Math.max(0, this.stats.fatigue - dt * 2);
-      this.stats.friendship = Math.min(100, this.stats.friendship + dt * 0.2);
-      if (this.stats.fatigue === 0) this.state = 'IDLE';
-    }
-
-    this.renderHUD();
-    this.save();
-  }
-
-  triggerRandomEvent() {
-    if (this.state !== 'IDLE') return;
-    const r = Math.random();
-    if (r < 0.2 && this.candleLit) {
-      this.state = 'CANDLE_OUT';
-      this.candleLit = false;
-      this.stats.mood -= 10;
-    } else if (r < 0.35 && !this.blackout) {
-      this.state = 'BLACKOUT';
-      this.blackout = true;
-      setTimeout(() => { this.blackout = false; if(this.state==='BLACKOUT') this.state='IDLE'; }, 15000);
-    } else if (this.stats.fatigue > 75) {
-      this.state = 'SLEEPING';
-    }
-  }
-
-  renderHUD() {
-    document.getElementById('bar-hunger').style.width = this.stats.hunger + '%';
-    document.getElementById('bar-mood').style.width = this.stats.mood + '%';
-    document.getElementById('bar-fatigue').style.width = this.stats.fatigue + '%';
-    document.getElementById('bar-friendship').style.width = this.stats.friendship + '%';
-    document.getElementById('bar-cleanliness').style.width = this.stats.cleanliness + '%';
-    document.getElementById('bar-warmth').style.width = this.stats.warmth + '%';
-
-    const ind = document.getElementById('eventInd');
-    if (this.state !== 'IDLE') ind.classList.add('event-active');
-    else ind.classList.remove('event-active');
+    this.loop();
   }
 
   bindEvents() {
     canvas.addEventListener('click', (e) => {
       const rect = canvas.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+      const clickX = e.clientX - rect.left;
+      const clickY = e.clientY - rect.top;
 
-      // Minigame clicks
-      if (this.activeSeeds.length > 0) {
-        this.activeSeeds = this.activeSeeds.filter(s => Math.hypot(s.x - x, s.y - y) > 20);
-        if (this.activeSeeds.length === 0) {
-          this.stats.hunger = Math.min(100, this.stats.hunger + 25);
-          this.stats.mood = Math.min(100, this.stats.mood + 15);
-        }
-        return;
-      }
-
-      // Event interactions
-      if (this.state === 'CANDLE_OUT') {
-        this.candleLit = true;
-        this.state = 'IDLE';
-        this.stats.mood += 5;
-        return;
-      }
-
-      if (this.state === 'SLEEPING') {
-        this.stats.friendship = Math.max(0, this.stats.friendship - 2);
-        return;
-      }
-
-      // Toggle Radial Menu
-      const menu = document.getElementById('radialMenu');
-      if (menu.style.display === 'block') {
-        menu.style.display = 'none';
-      } else {
-        menu.style.display = 'block';
-        menu.style.left = e.clientX + 'px';
-        menu.style.top = e.clientY + 'px';
+      // Клик по Canvas заставляет персонажей идти к точке клика
+      if (clickY > canvas.height * 0.4) {
+        this.cat.targetX = clickX;
+        this.dragon.targetX = clickX - 50; // Дракончик идет рядом
       }
     });
   }
 
-  handleMenu(action) {
-    document.getElementById('radialMenu').style.display = 'none';
-    if (action === 'feed') {
-      // Spawn seeds minigame
-      this.activeSeeds = [
-        {x: canvas.width * 0.4, y: canvas.height * 0.7},
-        {x: canvas.width * 0.5, y: canvas.height * 0.72},
-        {x: canvas.width * 0.6, y: canvas.height * 0.68}
-      ];
-    } else if (action === 'clean') {
-      this.stats.cleanliness = Math.min(100, this.stats.cleanliness + 30);
-      this.stats.friendship = Math.min(100, this.stats.friendship + 2);
-    } else if (action === 'light') {
-      this.candleLit = true;
-      if (this.state === 'CANDLE_OUT') this.state = 'IDLE';
-    } else if (action === 'play') {
-      this.stats.mood = Math.min(100, this.stats.mood + 20);
-      this.stats.fatigue = Math.min(100, this.stats.fatigue + 10);
-    }
+  interact() {
+    // Подзвать персонажей в центр
+    this.cat.targetX = canvas.width * 0.5;
+    this.dragon.targetX = canvas.width * 0.35;
+    this.stats.mood = Math.min(100, this.stats.mood + 10);
+    this.stats.friendship = Math.min(100, this.stats.friendship + 2);
   }
 
-  // Visuals: Engraving Hatching Style
-  drawHatching(x, y, w, h, step = 4) {
-    ctx.strokeStyle = '#111';
+  toggleCandle() {
+    this.candleLit = !this.candleLit;
+  }
+
+  update() {
+    this.time += 0.05; // Перемотка фазы анимации
+
+    // Логика перемещения (плавный подход к targetX)
+    const updateCharPos = (char) => {
+      const dx = char.targetX - char.x;
+      if (Math.abs(dx) > 2) {
+        char.vx = Math.sign(dx) * 2;
+        char.x += char.vx;
+      } else {
+        char.vx = 0;
+      }
+    };
+
+    updateCharPos(this.cat);
+    updateCharPos(this.dragon);
+
+    // Моргание кошки (случайный тайминг)
+    if (Math.random() < 0.01) {
+      this.cat.isBlinking = true;
+      setTimeout(() => this.cat.isBlinking = false, 150);
+    }
+
+    // Изменение параметров
+    this.stats.hunger = Math.max(0, this.stats.hunger - 0.01);
+    this.stats.mood = Math.max(0, this.stats.mood - 0.005);
+
+    // Обновление баров
+    document.getElementById('bar-hunger').style.width = this.stats.hunger + '%';
+    document.getElementById('bar-mood').style.width = this.stats.mood + '%';
+    document.getElementById('bar-fatigue').style.width = this.stats.fatigue + '%';
+    document.getElementById('bar-friendship').style.width = this.stats.friendship + '%';
+  }
+
+  // --- ВЕКТОРНАЯ ОТРИСОВКА ПЕРСОНАЖЕЙ (ГРАВЮРНЫЙ СТИЛЬ) ---
+
+  drawHatching(x, y, w, h, step = 6) {
+    ctx.strokeStyle = '#222';
     ctx.lineWidth = 1;
     ctx.beginPath();
     for (let i = -h; i < w; i += step) {
@@ -221,115 +162,228 @@ class Game {
     ctx.stroke();
   }
 
-  draw() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    
-    // Background style
-    ctx.fillStyle = this.blackout ? '#0a0a0a' : '#e6e6e6';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    if (!this.blackout) {
-      // Floor Line
-      ctx.strokeStyle = '#111';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(0, canvas.height * 0.75);
-      ctx.lineTo(canvas.width, canvas.height * 0.75);
-      ctx.stroke();
-
-      // Large Adult Furniture (Table Legs)
-      ctx.fillRect(canvas.width * 0.7, canvas.height * 0.2, 12, canvas.height * 0.55);
-      
-      // Box
-      ctx.strokeRect(canvas.width * 0.1, canvas.height * 0.65, 70, 50);
-      this.drawHatching(canvas.width * 0.1, canvas.height * 0.65, 70, 50, 6);
-    }
-
-    // Candle Light Effect
-    if (!this.candleLit || this.blackout) {
-      ctx.fillStyle = 'rgba(0,0,0,0.6)';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-
-    // Characters (Procedural Ink Shapes)
-    this.drawCat();
-    this.drawDragon();
-
-    // Minigame: Seeds
-    this.activeSeeds.forEach(s => {
-      ctx.fillStyle = '#000';
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, 5, 0, Math.PI * 2);
-      ctx.fill();
-    });
-  }
-
   drawCat() {
     ctx.save();
-    ctx.translate(this.cat.x, this.cat.y);
     
+    // Анимация шага и дыхания
+    const walkBounce = Math.abs(Math.sin(this.time * 3)) * (this.cat.vx !== 0 ? 6 : 0);
+    const breathe = Math.sin(this.time * 1.5) * 1.5;
+    
+    ctx.translate(this.cat.x, this.cat.y - walkBounce);
+
     ctx.fillStyle = '#fff';
     ctx.strokeStyle = '#000';
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
 
-    // Body
+    // 1. Хвост (анимированный изгиб)
+    const tailWiggle = Math.sin(this.time * 2) * 10;
     ctx.beginPath();
-    ctx.arc(0, 0, 22, 0, Math.PI * 2);
+    ctx.moveTo(15, -20);
+    ctx.quadraticCurveTo(35 + tailWiggle, -40, 25 + tailWiggle, -60);
+    ctx.stroke();
+
+    // 2. Платьице / Тело
+    ctx.beginPath();
+    ctx.moveTo(-12, -35);
+    ctx.lineTo(12, -35);
+    ctx.lineTo(20, -10 + breathe);
+    ctx.lineTo(-20, -10 + breathe);
+    ctx.closePath();
     ctx.fill(); ctx.stroke();
 
-    // Ears
+    // Штриховка на платье
+    ctx.save();
+    ctx.clip();
+    this.drawHatching(-20, -35, 40, 30, 5);
+    ctx.restore();
+
+    // 3. Ножки
     ctx.beginPath();
-    ctx.moveTo(-15, -15); ctx.lineTo(-22, -35); ctx.lineTo(-5, -20);
-    ctx.moveTo(15, -15); ctx.lineTo(22, -35); ctx.lineTo(5, -20);
+    ctx.rect(-10, -10 + breathe, 6, 10 + walkBounce);
+    ctx.rect(4, -10 + breathe, 6, 10 - walkBounce);
     ctx.fill(); ctx.stroke();
 
-    // Big Eyes
+    // 4. Голова с пышной причёской
+    ctx.beginPath();
+    ctx.arc(0, -50 + breathe, 22, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // Кошачьи Ушки
+    // Левое
+    ctx.beginPath();
+    ctx.moveTo(-15, -62 + breathe);
+    ctx.lineTo(-24, -82 + breathe);
+    ctx.lineTo(-5, -70 + breathe);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    // Правое
+    ctx.beginPath();
+    ctx.moveTo(15, -62 + breathe);
+    ctx.lineTo(24, -82 + breathe);
+    ctx.lineTo(5, -70 + breathe);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+
+    // 5. Лицо (Глаза, Носик, Усики)
     ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.arc(-8, -4, 4, 0, Math.PI * 2);
-    ctx.arc(8, -4, 4, 0, Math.PI * 2);
-    ctx.fill();
+    if (!this.cat.isBlinking) {
+      // Большие глаза
+      ctx.beginPath();
+      ctx.ellipse(-8, -52 + breathe, 4, 6, 0, 0, Math.PI * 2);
+      ctx.ellipse(8, -52 + breathe, 4, 6, 0, 0, Math.PI * 2);
+      ctx.fill();
 
-    // Hatching shade
-    this.drawHatching(-15, 5, 30, 10, 5);
+      // Блик в глазах
+      ctx.fillStyle = '#fff';
+      ctx.beginPath();
+      ctx.arc(-9, -54 + breathe, 1.5, 0, Math.PI * 2);
+      ctx.arc(7, -54 + breathe, 1.5, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // Моргание (щелочки)
+      ctx.beginPath();
+      ctx.moveTo(-12, -52 + breathe); ctx.lineTo(-4, -52 + breathe);
+      ctx.moveTo(4, -52 + breathe); ctx.lineTo(12, -52 + breathe);
+      ctx.stroke();
+    }
+
+    // Усики
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-18, -48 + breathe); ctx.lineTo(-28, -52 + breathe);
+    ctx.moveTo(-18, -45 + breathe); ctx.lineTo(-27, -45 + breathe);
+    ctx.moveTo(18, -48 + breathe); ctx.lineTo(28, -52 + breathe);
+    ctx.moveTo(18, -45 + breathe); ctx.lineTo(27, -45 + breathe);
+    ctx.stroke();
 
     ctx.restore();
   }
 
   drawDragon() {
     ctx.save();
-    ctx.translate(this.dragon.x, this.dragon.y);
+    
+    const walkBounce = Math.abs(Math.sin(this.time * 3)) * (this.dragon.vx !== 0 ? 4 : 0);
+    const breathe = Math.sin(this.time * 2 + 1) * 1.5;
 
-    ctx.fillStyle = '#222';
+    ctx.translate(this.dragon.x, this.dragon.y - walkBounce);
+
+    ctx.fillStyle = '#1a1a1a'; // Тёмно-серый/чёрный силуэт
     ctx.strokeStyle = '#000';
+    ctx.lineWidth = 2;
 
-    // Angular Silhouette
+    // 1. Крылышки (хлопают)
+    const wingFlap = Math.sin(this.time * 3) * 0.2;
+    ctx.save();
+    ctx.scale(1, 1 + wingFlap);
     ctx.beginPath();
-    ctx.moveTo(-10, 10);
-    ctx.lineTo(0, -20);
-    ctx.lineTo(12, 10);
+    ctx.moveTo(-8, -25);
+    ctx.lineTo(-28, -40);
+    ctx.lineTo(-18, -20);
+    ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+
+    // 2. Угловатое тело
+    ctx.beginPath();
+    ctx.moveTo(0, -35 + breathe);
+    ctx.lineTo(15, -15);
+    ctx.lineTo(10, 0);
+    ctx.lineTo(-12, 0);
+    ctx.lineTo(-15, -20);
     ctx.closePath();
     ctx.fill(); ctx.stroke();
 
-    // Spark / Torch Light in Dark
-    if (!this.candleLit || this.blackout) {
-      ctx.fillStyle = '#fff';
-      ctx.beginPath();
-      ctx.arc(0, -25, 4 + Math.random() * 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    // 3. Рожки
+    ctx.beginPath();
+    ctx.moveTo(-5, -33 + breathe); ctx.lineTo(-10, -45 + breathe); ctx.lineTo(-2, -36 + breathe);
+    ctx.moveTo(2, -33 + breathe); ctx.lineTo(8, -45 + breathe); ctx.lineTo(5, -36 + breathe);
+    ctx.fill(); ctx.stroke();
+
+    // 4. Светящийся хвост (Огонёк)
+    ctx.beginPath();
+    ctx.moveTo(-10, -5);
+    ctx.quadraticCurveTo(-25, -10, -28 + Math.sin(this.time * 4) * 3, -18);
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
+
+    // Огонёк-фонарик на кончике хвоста
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(-28 + Math.sin(this.time * 4) * 3, -18, 5 + Math.random() * 2, 0, Math.PI * 2);
+    ctx.fill(); ctx.stroke();
+
+    // 5. Глаз
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(5, -26 + breathe, 3, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
   }
 
-  startLoop() {
-    setInterval(() => this.triggerRandomEvent(), 7000);
-    const loop = () => {
-      this.updateStats();
-      this.draw();
-      requestAnimationFrame(loop);
-    };
-    loop();
+  drawEnvironment() {
+    // Фон и Темнота
+    ctx.fillStyle = this.candleLit ? '#e0e0e0' : '#111';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (this.candleLit) {
+      // Задняя комната
+      ctx.strokeStyle = '#000';
+      ctx.lineWidth = 2;
+
+      // Линия пола
+      ctx.beginPath();
+      ctx.moveTo(0, this.floorY);
+      ctx.lineTo(canvas.width, this.floorY);
+      ctx.stroke();
+
+      // Штриховка пола
+      this.drawHatching(0, this.floorY, canvas.width, canvas.height - this.floorY, 15);
+
+      // Крупный "взрослый" стол
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(canvas.width * 0.7, canvas.height * 0.25, 12, this.floorY - canvas.height * 0.25);
+      ctx.strokeRect(canvas.width * 0.7, canvas.height * 0.25, 12, this.floorY - canvas.height * 0.25);
+
+      // Коробка на полу
+      ctx.fillRect(20, this.floorY - 45, 70, 45);
+      ctx.strokeRect(20, this.floorY - 45, 70, 45);
+      this.drawHatching(20, this.floorY - 45, 70, 45, 6);
+
+      // Свеча на переднем плане
+      ctx.fillRect(canvas.width * 0.1, canvas.height * 0.3, 10, 25);
+      ctx.strokeRect(canvas.width * 0.1, canvas.height * 0.3, 10, 25);
+      
+      // Пламя свечи
+      ctx.beginPath();
+      ctx.arc(canvas.width * 0.1 + 5, canvas.height * 0.3 - 5, 4 + Math.sin(this.time * 5), 0, Math.PI * 2);
+      ctx.fill(); ctx.stroke();
+    } else {
+      // Ночной режим: снижен контраст, остаётся лишь свет огонька дракона
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.05)';
+      ctx.beginPath();
+      ctx.arc(this.dragon.x - 28, this.dragon.y - 18, 90, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // 1. Окружение
+    this.drawEnvironment();
+
+    // 2. Персонажи (полностью векторные)
+    this.drawCat();
+    this.drawDragon();
+  }
+
+  loop() {
+    this.update();
+    this.draw();
+    requestAnimationFrame(() => this.loop());
   }
 }
 

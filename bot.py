@@ -7,7 +7,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 # Токен берется из переменных окружения или указывается напрямую
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-WEB_APP_URL = os.getenv("WEB_APP_URL", "https://your-username.github.io/your-repo/")
+WEB_APP_URL = os.getenv("WEB_APP_URL", "https://hor4ik.github.io/miu/")
 
 logging.basicConfig(level=logging.INFO)
 bot = Bot(token=BOT_TOKEN)
