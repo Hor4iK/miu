@@ -190,20 +190,35 @@
 
         const cat = {
             x: 140,
-            y: 450,
+            y: 470,
             w: 60,
-            h: 70,
-            state: 'idle', // idle, sleeping, stuck, grooming, window
+            h: 82,
+            state: 'idle', // idle, walking, eating, grooming, playing, sleeping, stuck, window
+            activity: 'Стоит',
             vx: 0,
-            targetX: 140
+            targetX: 140,
+            targetY: 470,
+            direction: 1,
+            animTime: Math.random() * 10,
+            taskUntil: 0,
+            idleUntil: 0
         };
 
         const dragon = {
             x: 210,
-            y: 460,
+            y: 465,
             w: 45,
-            h: 55,
-            state: 'idle', // idle, sleeping, shocked, warming
+            h: 60,
+            state: 'idle', // idle, walking, eating, warming, sleeping, shocked
+            activity: 'Стоит',
+            vx: 0,
+            vy: 0,
+            targetX: 210,
+            targetY: 465,
+            direction: -1,
+            animTime: Math.random() * 10,
+            taskUntil: 0,
+            idleUntil: 0,
             sparks: []
         };
 
@@ -330,8 +345,16 @@
         function clearEvent() {
             activeEvent = null;
             banner.style.display = 'none';
-            if (cat.state !== 'sleeping') cat.state = 'idle';
-            if (dragon.state !== 'sleeping') dragon.state = 'idle';
+            if (cat.state !== 'sleeping') {
+                cat.state = 'idle';
+                cat.activity = 'Осматривается';
+                cat.taskUntil = performance.now() + 1200;
+            }
+            if (dragon.state !== 'sleeping') {
+                dragon.state = 'idle';
+                dragon.activity = 'Осматривается';
+                dragon.taskUntil = performance.now() + 1200;
+            }
             parcel = null;
             seeds = [];
         }
@@ -371,6 +394,138 @@
                 triggerEvent(EVENTS.SNUGGLE_SLEEP);
             }
         }, 1000);
+
+        // -------------------------------------------------------------
+        // ЖИВАЯ АВТОНОМНАЯ ЖИЗНЬ ПЕРСОНАЖЕЙ
+        // -------------------------------------------------------------
+        const CAT_TASKS = [
+            { name: 'Идёт к окну', x: 260, y: 330, state: 'walking', duration: 4200 },
+            { name: 'Проверяет коробку', x: 85, y: 475, state: 'walking', duration: 3800 },
+            { name: 'Идёт к миске', x: 182, y: 500, state: 'walking', duration: 3500 },
+            { name: 'Гуляет по комнате', x: 110, y: 475, state: 'walking', duration: 4500 },
+            { name: 'Умывается', x: 120, y: 500, state: 'grooming', duration: 4200 },
+            { name: 'Играет с хвостиком', x: 230, y: 490, state: 'playing', duration: 3600 }
+        ];
+
+        const DRAGON_TASKS = [
+            { name: 'Греется у свечи', x: 275, y: 445, state: 'walking', duration: 4300 },
+            { name: 'Проверяет миску', x: 190, y: 505, state: 'walking', duration: 3600 },
+            { name: 'Летает по комнате', x: 250, y: 360, state: 'walking', duration: 3800 },
+            { name: 'Возится с коробкой', x: 90, y: 480, state: 'walking', duration: 4000 },
+            { name: 'Топчется на месте', x: 210, y: 470, state: 'walking', duration: 3000 }
+        ];
+
+        function chooseNextTask(now) {
+            if (activeEvent !== null) return;
+
+            // Если персонаж устал — сон становится приоритетом.
+            if (stats.energy < 18) {
+                cat.state = 'sleeping';
+                cat.activity = 'Спит';
+                cat.taskUntil = now + 9000;
+                dragon.state = 'sleeping';
+                dragon.activity = 'Спит';
+                dragon.taskUntil = now + 9000;
+                return;
+            }
+
+            const catTask = CAT_TASKS[Math.floor(Math.random() * CAT_TASKS.length)];
+            cat.targetX = catTask.x;
+            cat.targetY = catTask.y;
+            cat.state = catTask.state;
+            cat.activity = catTask.name;
+            cat.taskUntil = now + catTask.duration;
+
+            // Дракончик иногда выбирает свою задачу независимо.
+            const dragonTask = DRAGON_TASKS[Math.floor(Math.random() * DRAGON_TASKS.length)];
+            dragon.targetX = dragonTask.x;
+            dragon.targetY = dragonTask.y;
+            dragon.state = dragonTask.state;
+            dragon.activity = dragonTask.name;
+            dragon.taskUntil = now + dragonTask.duration;
+        }
+
+        function moveCharacter(ch, dt, speed) {
+            const dx = ch.targetX - ch.x;
+            const dy = ch.targetY - ch.y;
+            const distance = Math.hypot(dx, dy);
+
+            if (distance < 3) {
+                if (ch.state === 'walking') ch.state = 'idle';
+                return;
+            }
+
+            const step = Math.min(distance, speed * dt);
+            ch.x += (dx / distance) * step;
+            ch.y += (dy / distance) * step;
+
+            if (Math.abs(dx) > 0.5) ch.direction = dx > 0 ? 1 : -1;
+            ch.animTime += dt;
+
+            // Не даём персонажам уходить за пределы игровой комнаты.
+            ch.x = Math.max(45, Math.min(GAME_WIDTH - 45, ch.x));
+            ch.y = Math.max(285, Math.min(GAME_HEIGHT - 70, ch.y));
+        }
+
+        function updateLivingWorld(now, dt) {
+            if (activeEvent !== null) return;
+
+            cat.animTime += dt;
+            dragon.animTime += dt;
+
+            if (now > cat.taskUntil && now > dragon.taskUntil) {
+                chooseNextTask(now);
+            }
+
+            if (cat.state === 'walking') {
+                moveCharacter(cat, dt, 38);
+                if (Math.hypot(cat.targetX - cat.x, cat.targetY - cat.y) < 4) {
+                    cat.state = 'idle';
+                }
+            } else if (cat.state === 'grooming') {
+                // Небольшая анимация умывания.
+                cat.animTime += dt * 1.5;
+                if (now > cat.taskUntil) {
+                    stats.cleanliness = Math.min(100, stats.cleanliness + 3);
+                    stats.mood = Math.min(100, stats.mood + 1);
+                }
+            } else if (cat.state === 'playing') {
+                cat.targetX = 140 + Math.sin(cat.animTime * 1.8) * 55;
+                cat.targetY = 475 + Math.cos(cat.animTime * 1.4) * 18;
+                cat.state = 'walking';
+                cat.activity = 'Играет';
+            }
+
+            if (dragon.state === 'walking') {
+                moveCharacter(dragon, dt, 31);
+                if (Math.hypot(dragon.targetX - dragon.x, dragon.targetY - dragon.y) < 4) {
+                    dragon.state = 'idle';
+                }
+            }
+
+            // После окончания действия персонаж некоторое время просто живёт:
+            // моргает, покачивается и выбирает новую активность.
+            if (now > cat.taskUntil && cat.state !== 'sleeping') {
+                cat.state = 'idle';
+                cat.activity = 'Осматривается';
+                cat.idleUntil = now + 1000 + Math.random() * 2500;
+            }
+            if (now > dragon.taskUntil && dragon.state !== 'sleeping') {
+                dragon.state = 'idle';
+                dragon.activity = 'Осматривается';
+                dragon.idleUntil = now + 1000 + Math.random() * 2500;
+            }
+
+            if (cat.state === 'sleeping' && now > cat.taskUntil) {
+                cat.state = 'idle';
+                cat.activity = 'Просыпается';
+                stats.energy = Math.min(100, stats.energy + 12);
+            }
+            if (dragon.state === 'sleeping' && now > dragon.taskUntil) {
+                dragon.state = 'idle';
+                dragon.activity = 'Просыпается';
+            }
+        }
 
         // -------------------------------------------------------------
         // ОТРИСОВКА В СТИЛЕ ЧЁРНО-БЕЛОРЙ ГРАВЮРЫ (ENGRAVING/HATCHING)
@@ -493,21 +648,37 @@
             ctx.save();
             ctx.translate(cat.x, cat.y);
 
+            const moving = cat.state === 'walking';
+            const walk = moving ? Math.sin(cat.animTime * 12) : 0;
+            const bob = moving ? Math.abs(Math.sin(cat.animTime * 12)) * 1.5 : 0;
+            const blink = Math.sin(cat.animTime * 1.7) > 0.94;
+
             if (cat.state === 'stuck') {
-                // Попа кошки и хвостик торчат из коробки
+                // Из коробки торчат задние лапки и хвост.
                 ctx.fillStyle = '#d0d0d0';
                 ctx.beginPath();
-                ctx.arc(0, 0, 25, Math.PI, 0);
+                ctx.ellipse(0, 5, 24, 18, 0, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.strokeStyle = '#000000';
+                ctx.strokeStyle = '#000';
                 ctx.lineWidth = 2;
                 ctx.stroke();
 
-                // Хвостик
+                ctx.strokeStyle = '#fff';
+                ctx.lineWidth = 4;
                 ctx.beginPath();
-                ctx.moveTo(0, -10);
-                ctx.quadraticCurveTo(20, -30, 15, -45);
-                ctx.strokeStyle = '#ffffff';
+                ctx.moveTo(-10, 14); ctx.lineTo(-14, 31);
+                ctx.moveTo(10, 14); ctx.lineTo(14, 31);
+                ctx.stroke();
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(-14, 32, 4, 0, Math.PI * 2);
+                ctx.arc(14, 32, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.moveTo(5, 0);
+                ctx.quadraticCurveTo(28, -18, 18, -38);
+                ctx.strokeStyle = '#fff';
                 ctx.lineWidth = 4;
                 ctx.stroke();
                 ctx.restore();
@@ -515,63 +686,126 @@
             }
 
             if (cat.state === 'sleeping') {
-                // Кошка свернулась клубочком
                 ctx.fillStyle = '#e0e0e0';
                 ctx.beginPath();
-                ctx.ellipse(0, 10, 25, 18, 0, 0, Math.PI * 2);
+                ctx.ellipse(0, 10, 28, 20, 0, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
                 ctx.stroke();
 
-                // Ушки
+                // Лапки под мордочкой.
+                ctx.fillStyle = '#f0f0f0';
                 ctx.beginPath();
-                ctx.moveTo(-15, -2); ctx.lineTo(-22, -12); ctx.lineTo(-8, -5);
-                ctx.fillStyle = '#ffffff';
+                ctx.ellipse(-11, 14, 7, 5, 0, 0, Math.PI * 2);
+                ctx.ellipse(10, 14, 7, 5, 0, 0, Math.PI * 2);
                 ctx.fill();
+                ctx.stroke();
+
+                ctx.beginPath();
+                ctx.moveTo(-17, 0); ctx.lineTo(-24, -11); ctx.lineTo(-8, -5);
+                ctx.moveTo(17, 0); ctx.lineTo(24, -11); ctx.lineTo(8, -5);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+                ctx.stroke();
+
+                ctx.fillStyle = '#000';
+                ctx.font = '12px Courier New';
+                ctx.fillText('z', 25, -12);
+                ctx.fillText('z', 34, -22);
                 ctx.restore();
                 return;
             }
 
-            // Обычная стойка
-            // Тело
+            // Ноги кошко-девочки: две полноценные конечности с лапками.
+            ctx.strokeStyle = '#e8e8e8';
+            ctx.lineWidth = 7;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-10, 20);
+            ctx.lineTo(-11 + walk * 5, 43);
+            ctx.lineTo(-12 - walk * 5, 55);
+            ctx.moveTo(10, 20);
+            ctx.lineTo(11 - walk * 5, 43);
+            ctx.lineTo(12 + walk * 5, 55);
+            ctx.stroke();
+
+            ctx.fillStyle = '#f5f5f5';
+            ctx.beginPath();
+            ctx.ellipse(-12 - walk * 5, 57, 7, 4, 0, 0, Math.PI * 2);
+            ctx.ellipse(12 + walk * 5, 57, 7, 4, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Тело.
             ctx.fillStyle = '#e0e0e0';
             ctx.beginPath();
-            ctx.ellipse(0, 0, 22, 28, 0, 0, Math.PI * 2);
+            ctx.ellipse(0, bob, 22, 28, 0, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = '#000000';
+            ctx.strokeStyle = '#000';
             ctx.lineWidth = 2;
             ctx.stroke();
 
-            // Голова
+            // Руки/передние лапы — двигаются при ходьбе.
+            ctx.strokeStyle = '#ededed';
+            ctx.lineWidth = 7;
+            ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.arc(0, -32, 22, 0, Math.PI * 2);
+            ctx.moveTo(-18, -4);
+            ctx.lineTo(-28, 10 + walk * 6);
+            ctx.moveTo(18, -4);
+            ctx.lineTo(28, 10 - walk * 6);
+            ctx.stroke();
+
+            // Маленькие лапки на концах рук.
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(-29, 11 + walk * 6, 5, 0, Math.PI * 2);
+            ctx.arc(29, 11 - walk * 6, 5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            // Голова.
+            ctx.beginPath();
+            ctx.arc(0, -32 - bob, 22, 0, Math.PI * 2);
             ctx.fillStyle = '#f0f0f0';
             ctx.fill();
             ctx.stroke();
 
-            // Ушки
+            // Ушки.
             ctx.beginPath();
             ctx.moveTo(-16, -45); ctx.lineTo(-24, -62); ctx.lineTo(-6, -50);
             ctx.moveTo(16, -45); ctx.lineTo(24, -62); ctx.lineTo(6, -50);
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = '#fff';
             ctx.fill();
             ctx.stroke();
 
-            // Глаза (большие выразительные)
+            // Глаза.
             ctx.fillStyle = '#0a0a0a';
-            ctx.beginPath();
-            ctx.ellipse(-8, -34, 5, 8, 0, 0, Math.PI * 2);
-            ctx.ellipse(8, -34, 5, 8, 0, 0, Math.PI * 2);
-            ctx.fill();
+            if (blink) {
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(-12, -34); ctx.lineTo(-4, -34);
+                ctx.moveTo(4, -34); ctx.lineTo(12, -34);
+                ctx.stroke();
+            } else {
+                ctx.beginPath();
+                ctx.ellipse(-8, -34, 5, 8, 0, 0, Math.PI * 2);
+                ctx.ellipse(8, -34, 5, 8, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(-6, -36, 2, 0, Math.PI * 2);
+                ctx.arc(10, -36, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
 
-            // Искры в глазах
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(-6, -36, 2, 0, Math.PI * 2);
-            ctx.arc(10, -36, 2, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Усики (штрихи)
+            // Усики.
             ctx.strokeStyle = '#000';
             ctx.lineWidth = 1;
             ctx.beginPath();
@@ -581,11 +815,11 @@
             ctx.moveTo(12, -25); ctx.lineTo(26, -23);
             ctx.stroke();
 
-            // Хвост
+            // Хвост — слегка машет.
             ctx.beginPath();
             ctx.moveTo(15, 10);
-            ctx.quadraticCurveTo(35, 0, 30, -20);
-            ctx.strokeStyle = '#ffffff';
+            ctx.quadraticCurveTo(35, 2 + walk * 3, 30 + walk * 3, -20);
+            ctx.strokeStyle = '#fff';
             ctx.lineWidth = 4;
             ctx.stroke();
 
@@ -596,19 +830,28 @@
             ctx.save();
             ctx.translate(dragon.x, dragon.y);
 
+            const moving = dragon.state === 'walking';
+            const walk = moving ? Math.sin(dragon.animTime * 13) : 0;
+            const flap = Math.sin(dragon.animTime * 9) * (moving ? 3 : 1.5);
+
             if (dragon.state === 'sleeping') {
-                ctx.fillStyle = '#666666';
+                ctx.fillStyle = '#666';
                 ctx.beginPath();
-                ctx.ellipse(0, 10, 18, 14, 0, 0, Math.PI * 2);
+                ctx.ellipse(0, 10, 20, 15, 0, 0, Math.PI * 2);
                 ctx.fill();
-                ctx.strokeStyle = '#ffffff';
+                ctx.strokeStyle = '#fff';
                 ctx.stroke();
+                ctx.fillStyle = '#888';
+                ctx.beginPath();
+                ctx.ellipse(-9, 16, 7, 4, 0, 0, Math.PI * 2);
+                ctx.ellipse(9, 16, 7, 4, 0, 0, Math.PI * 2);
+                ctx.fill();
                 ctx.restore();
                 return;
             }
 
-            // Угловое угловатое тело
-            ctx.fillStyle = '#555555';
+            // Тело.
+            ctx.fillStyle = '#555';
             ctx.beginPath();
             ctx.moveTo(-15, 20);
             ctx.lineTo(-12, -15);
@@ -617,33 +860,64 @@
             ctx.lineTo(15, 20);
             ctx.closePath();
             ctx.fill();
-            ctx.strokeStyle = '#ffffff';
+            ctx.strokeStyle = '#fff';
             ctx.lineWidth = 1.5;
             ctx.stroke();
 
-            // Маленькие крылья с текстурой штриховки
+            // Лапки/ножки дракончика.
+            ctx.strokeStyle = '#777';
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
             ctx.beginPath();
-            ctx.moveTo(-12, -5); ctx.lineTo(-28, -18); ctx.lineTo(-15, 10);
-            ctx.moveTo(12, -5); ctx.lineTo(28, -18); ctx.lineTo(15, 10);
-            ctx.fillStyle = '#333333';
+            ctx.moveTo(-8, 15); ctx.lineTo(-10 - walk * 4, 31);
+            ctx.moveTo(8, 15); ctx.lineTo(10 + walk * 4, 31);
+            ctx.stroke();
+            ctx.fillStyle = '#aaa';
+            ctx.beginPath();
+            ctx.arc(-10 - walk * 4, 32, 4, 0, Math.PI * 2);
+            ctx.arc(10 + walk * 4, 32, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Крылья.
+            ctx.beginPath();
+            ctx.moveTo(-12, -5);
+            ctx.lineTo(-28, -18 - flap);
+            ctx.lineTo(-15, 10);
+            ctx.moveTo(12, -5);
+            ctx.lineTo(28, -18 + flap);
+            ctx.lineTo(15, 10);
+            ctx.fillStyle = '#333';
             ctx.fill();
             ctx.stroke();
 
-            // Рожки
+            // Рожки.
             ctx.beginPath();
             ctx.moveTo(-5, -28); ctx.lineTo(-10, -38); ctx.lineTo(-2, -30);
             ctx.moveTo(5, -28); ctx.lineTo(10, -38); ctx.lineTo(2, -30);
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = '#fff';
             ctx.fill();
 
-            // Глаза
-            ctx.fillStyle = '#ffffff';
+            // Глаза.
+            ctx.fillStyle = '#fff';
             ctx.beginPath();
             ctx.arc(-5, -20, 3, 0, Math.PI * 2);
             ctx.arc(5, -20, 3, 0, Math.PI * 2);
             ctx.fill();
 
-            // Отрисовка искр вокруг дракончика
+            // Передние лапки.
+            ctx.strokeStyle = '#777';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(-11, -2); ctx.lineTo(-23, 8 + walk * 4);
+            ctx.moveTo(11, -2); ctx.lineTo(23, 8 - walk * 4);
+            ctx.stroke();
+            ctx.fillStyle = '#bbb';
+            ctx.beginPath();
+            ctx.arc(-24, 9 + walk * 4, 4, 0, Math.PI * 2);
+            ctx.arc(24, 9 - walk * 4, 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Искры.
             dragon.sparks.forEach(s => {
                 s.x += Math.cos(s.angle) * s.speed;
                 s.y += Math.sin(s.angle) * s.speed;
@@ -651,10 +925,25 @@
                     s.x = (Math.random() - 0.5) * 10;
                     s.y = (Math.random() - 0.5) * 10;
                 }
-                ctx.fillStyle = '#ffffff';
+                ctx.fillStyle = '#fff';
                 ctx.fillRect(s.x, s.y, 2, 2);
             });
 
+            ctx.restore();
+        }
+
+        function drawActivityLabel(x, y, text) {
+            ctx.save();
+            ctx.font = '8px Courier New';
+            ctx.textAlign = 'center';
+            const width = Math.max(52, ctx.measureText(text).width + 10);
+            ctx.fillStyle = 'rgba(10,10,10,0.85)';
+            ctx.fillRect(x - width / 2, y - 10, width, 13);
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x - width / 2, y - 10, width, 13);
+            ctx.fillStyle = '#eee';
+            ctx.fillText(text, x, y);
             ctx.restore();
         }
 
@@ -692,6 +981,9 @@
                 ctx.fillStyle = '#e0e0e0';
                 ctx.fillRect(x + 60, y, fillW, barH);
             });
+
+            drawActivityLabel(cat.x, cat.y - 68, cat.activity);
+            drawActivityLabel(dragon.x, dragon.y - 45, dragon.activity);
 
             // Эффект темной комнаты (Отключение света / свеча погасла)
             if (activeEvent === EVENTS.BLACKOUT || !world.candle.lit) {
@@ -871,9 +1163,9 @@
                     x: cat.x,
                     y: cat.y - 20,
                     options: [
-                        { label: 'Гладить', action: () => { stats.mood = Math.min(100, stats.mood + 10); showToast('Кошка мурчит!'); } },
-                        { label: 'Играть', action: () => { stats.mood = Math.min(100, stats.mood + 15); stats.energy = Math.max(0, stats.energy - 10); showToast('Весёлая игра!'); } },
-                        { label: 'Помыть', action: () => { stats.cleanliness = Math.min(100, stats.cleanliness + 25); showToast('Кошка чистая!'); } }
+                        { label: 'Гладить', action: () => { stats.mood = Math.min(100, stats.mood + 10); cat.activity = 'Мурчит'; cat.taskUntil = performance.now() + 1800; showToast('Кошка мурчит!'); } },
+                        { label: 'Играть', action: () => { stats.mood = Math.min(100, stats.mood + 15); stats.energy = Math.max(0, stats.energy - 10); cat.activity = 'Играет'; cat.taskUntil = performance.now() + 2200; showToast('Весёлая игра!'); } },
+                        { label: 'Помыть', action: () => { stats.cleanliness = Math.min(100, stats.cleanliness + 25); cat.activity = 'Умывается'; cat.taskUntil = performance.now() + 2200; showToast('Кошка чистая!'); } }
                     ]
                 };
                 return;
@@ -904,9 +1196,15 @@
         // -------------------------------------------------------------
         // ИГРОВОЙ ЦИКЛ
         // -------------------------------------------------------------
-        function gameLoop() {
-            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+        let lastFrame = performance.now();
 
+        function gameLoop(now) {
+            const dt = Math.min(0.05, (now - lastFrame) / 1000);
+            lastFrame = now;
+
+            updateLivingWorld(now, dt);
+
+            ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
             drawBackground();
             drawCat();
             drawDragon();
@@ -915,7 +1213,9 @@
             requestAnimationFrame(gameLoop);
         }
 
-        gameLoop();
+        // Персонажи начинают жить сразу после загрузки.
+        chooseNextTask(performance.now());
+        requestAnimationFrame(gameLoop);
     </script>
 </body>
 </html>
