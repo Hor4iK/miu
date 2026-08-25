@@ -185,7 +185,12 @@
             candle: { x: 270, y: 395, w: 18, h: 35, lit: true },
             mug: { x: 300, y: 405, w: 20, h: 25 },
             bowl: { x: 160, y: 520, w: 45, h: 22 },
-            phone: { x: 20, y: 260, w: 30, h: 45 }
+            phone: { x: 20, y: 260, w: 30, h: 45, ringing: false },
+            brush: { x: 55, y: 385, w: 28, h: 12 },
+            toy: { x: 72, y: 525, w: 20, h: 12, hidden: false },
+            lighter: { x: 305, y: 370, w: 14, h: 24 },
+            tableStep: { x: 100, y: 395, w: 48, h: 25 },
+            hiddenToySpot: null
         };
 
         const cat = {
@@ -233,146 +238,138 @@
         }
 
         // -------------------------------------------------------------
-        // СИСТЕМА ИВЕНТОВ
+        // -------------------------------------------------------------
+        // ПОЛНАЯ СИСТЕМА ИВЕНТОВ
         // -------------------------------------------------------------
         let activeEvent = null;
         let eventTimer = 0;
-        let seeds = []; // Для мини-игры "рассыпанный корм"
-        let parcel = null; // Для ивента "почтальон"
-        let radialMenu = null; // Меню действий { x, y, options: [...] }
+        let eventState = {};
+        let seeds = [];
+        let parcel = null;
+        let radialMenu = null;
+        let postmanCooldown = performance.now() + 3 * 60 * 60 * 1000;
+        let sneezeCooldown = performance.now() + 24 * 60 * 60 * 1000;
+        let windowCooldown = 0;
 
         const EVENTS = {
-            SPILLED_FOOD: 'spilled_food',
-            POSTMAN: 'postman',
-            CANDLE_BLOWN: 'candle_blown',
-            SNUGGLE_SLEEP: 'snuggle_sleep',
-            BLACKOUT: 'blackout',
-            DRAGON_SNEEZE: 'dragon_sneeze',
-            CAT_STUCK: 'cat_stuck',
-            CAT_GROOMING: 'cat_grooming',
-            ROLE_SWAP: 'role_swap',
-            CAT_WINDOW: 'cat_window'
+            SPILLED_FOOD: 'spilled_food', POSTMAN: 'postman', CANDLE_BLOWN: 'candle_blown',
+            SNUGGLE_SLEEP: 'snuggle_sleep', PHONE: 'phone', BLACKOUT: 'blackout',
+            DRAGON_SNEEZE: 'dragon_sneeze', CAT_STUCK: 'cat_stuck', CAT_GROOMING: 'cat_grooming',
+            ROLE_SWAP: 'role_swap', CAT_WINDOW: 'cat_window', CAT_TABLE: 'cat_table', CAT_TOY: 'cat_toy',
+            DRAGON_WARM: 'dragon_warm'
         };
 
-        function triggerEvent(eventType) {
-            if (activeEvent !== null) return; // События не перекрываются!
+        function bannerEvent(title, desc) {
+            banner.style.display = 'block';
+            eventTitle.innerText = title;
+            eventDesc.innerText = desc;
+        }
 
-            activeEvent = eventType;
-            eventTimer = 0;
+        function triggerEvent(type, force=false) {
+            if (activeEvent !== null && !force) return false;
+            activeEvent = type; eventTimer = 0; eventState = {};
+            cat.taskUntil = performance.now() + 999999;
+            dragon.taskUntil = performance.now() + 999999;
 
-            switch (eventType) {
+            switch(type) {
                 case EVENTS.SPILLED_FOOD:
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'РАССЫПАННЫЙ КОРМ!';
-                    eventDesc.innerText = 'Тапай по зёрнышкам, чтобы всё собрать!';
-                    seeds = [];
-                    for (let i = 0; i < 5; i++) {
-                        seeds.push({
-                            x: 100 + Math.random() * 160,
-                            y: 520 + Math.random() * 40,
-                            r: 5
-                        });
-                    }
-                    cat.state = 'idle';
+                    bannerEvent('РАССЫПАННЫЙ КОРМ!', 'Кошка пытается помочь. Нажми на щётку, чтобы она сделала несколько взмахов.');
+                    eventState.stage='brush'; eventState.brushSwings=0; eventState.deadline=performance.now()+12000;
+                    cat.state='walking'; cat.targetX=70; cat.targetY=400; cat.activity='Идёт за щёткой';
                     break;
-
                 case EVENTS.POSTMAN:
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'ПОЧТАЛЬОН У ДВЕРИ!';
-                    eventDesc.innerText = 'Принесли посылку! Нажми на коробку у входа.';
-                    parcel = { x: 160, y: 380, w: 40, h: 35 };
-                    break;
-
+                    bannerEvent('ПОЧТАЛЬОН У ДВЕРИ!', 'Открой пакет. Если тянуть — герои начнут нервничать.');
+                    parcel={x:150,y:385,w:55,h:38}; eventState.deadline=performance.now()+18000;
+                    cat.activity='Скребётся у двери'; dragon.activity='Нервничает'; break;
                 case EVENTS.CANDLE_BLOWN:
-                    world.candle.lit = false;
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'СВЕЧА ПОГАСЛА!';
-                    eventDesc.innerText = 'Дракончик случайно задул свечу. Зажги её скорее!';
-                    stats.mood = Math.max(0, stats.mood - 10);
-                    break;
-
+                    world.candle.lit=false; bannerEvent('СВЕЧА ПОГАСЛА!', 'Дракончик случайно задул свечу. Зажги её.');
+                    eventState.deadline=performance.now()+12000; cat.state='walking'; cat.targetX=175; cat.targetY=470; cat.activity='Бежит к тебе'; break;
                 case EVENTS.SNUGGLE_SLEEP:
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'СОН В ОБНИМКУ';
-                    eventDesc.innerText = 'Малыши спят в коробке... Нажми, чтобы погладить.';
-                    cat.state = 'sleeping';
-                    dragon.state = 'sleeping';
-                    break;
-
+                    bannerEvent('СОН В ОБНИМКУ', 'Они сами нашли уютный уголок. Тап — вздрагивают, ворчат и снова прижимаются.');
+                    cat.state='sleeping'; dragon.state='sleeping'; cat.x=90; cat.y=500; dragon.x=112; dragon.y=500; eventState.tapped=false; eventState.deadline=performance.now()+15000; break;
+                case EVENTS.PHONE:
+                    bannerEvent('ТЕЛЕФОН ЗВОНИТ', 'Телефон вибрирует. Возьми трубку — или оставь их отвлекаться.');
+                    world.phone.ringing=true; eventState.deadline=performance.now()+10000; break;
                 case EVENTS.BLACKOUT:
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'ОТКЛЮЧЕНИЕ СВЕТА В ЖК!';
-                    eventDesc.innerText = 'Темнота! Найди свечу в темноте с помощью искр дракончика.';
-                    world.candle.lit = false;
-                    break;
-
+                    bannerEvent('ОТКЛЮЧЕНИЕ СВЕТА В ЖК!', 'Почти ничего не видно. Ищи кружку, зажигалку или коробку. Свет вернётся позже.');
+                    world.candle.lit=false; eventState.deadline=performance.now()+150000; eventState.found=false; break;
                 case EVENTS.DRAGON_SNEEZE:
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'ДРАКОНЧИК ЧИХНУЛ!';
-                    eventDesc.innerText = 'Уголок экрана тлеет! Быстро нажми на кружку с водой!';
-                    break;
-
+                    bannerEvent('ДРАКОНЧИК ЧИХНУЛ!', 'Уголок тлеет! Быстро нажми на кружку с водой.');
+                    eventState.deadline=performance.now()+7000; eventState.fire=0; dragon.activity='В панике'; break;
                 case EVENTS.CAT_STUCK:
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'КОШКА ЗАСТРЯЛА!';
-                    eventDesc.innerText = 'Кошка застряла в коробке! Потяни аккуратно за коробку.';
-                    cat.state = 'stuck';
-                    break;
-
+                    bannerEvent('КОШКА ЗАСТРЯЛА!', 'Помоги: потяни край коробки или поднеси миску. Резкий тап обидит её.');
+                    cat.state='stuck'; cat.activity='Застряла'; eventState.gentle=0; eventState.deadline=performance.now()+20000; break;
                 case EVENTS.CAT_GROOMING:
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'КОШКА УМЫВАЕТСЯ';
-                    eventDesc.innerText = 'Не мешай ей 10 секунд для +чистоты и +настроения!';
-                    cat.state = 'grooming';
-                    break;
-
+                    bannerEvent('КОШКА УМЫВАЕТСЯ', 'Не мешай ей 10–15 секунд.'); cat.state='grooming'; cat.activity='Умывается'; eventState.deadline=performance.now()+12000; break;
                 case EVENTS.ROLE_SWAP:
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'ОБМЕН РОЛЯМИ!';
-                    eventDesc.innerText = 'Кошка "дует огнём", а дракончик в шоке! Просто наблюдай.';
-                    dragon.state = 'shocked';
-                    break;
-
+                    bannerEvent('ОБМЕН РОЛЯМИ!', 'Кошка дует огнём, дракончик в шоке. Просто наблюдай.');
+                    dragon.state='shocked'; cat.activity='Дует огнём'; eventState.deadline=performance.now()+9000; break;
                 case EVENTS.CAT_WINDOW:
-                    banner.style.display = 'block';
-                    eventTitle.innerText = 'ОКНО В МИР';
-                    eventDesc.innerText = 'Кошка смотрит в окно. Подожди 5 секунд...';
-                    cat.state = 'window';
-                    break;
+                    bannerEvent('ОКНО В МИР', 'Подожди 5–10 секунд. Если нажать — она отвлечётся и уйдёт.');
+                    cat.state='window'; cat.x=260; cat.y=320; cat.activity='Смотрит в окно'; eventState.deadline=performance.now()+8000; break;
+                case EVENTS.CAT_TABLE:
+                    bannerEvent('КОШКА ХОЧЕТ НА СТОЛ', 'Подтащи коробку к столу — она использует её как ступеньку.');
+                    cat.state='walking'; cat.targetX=125; cat.targetY=410; cat.activity='Тянется к столу'; eventState.stepPlaced=false; eventState.deadline=performance.now()+18000; break;
+                case EVENTS.CAT_TOY:
+                    bannerEvent('КОШКА ПРЯЧЕТ ИГРУШКУ', 'Она спрятала игрушку. Найди её в комнате.');
+                    world.toy.hidden=true; const spots=[{x:25,y:405},{x:75,y:505},{x:305,y:420}]; world.hiddenToySpot=spots[Math.floor(Math.random()*spots.length)]; eventState.deadline=performance.now()+20000; cat.activity='Прячет игрушку'; break;
+                case EVENTS.DRAGON_WARM:
+                    bannerEvent('ДРАКОНЧИК ГРЕЕТ КОШКУ', 'Он сам подлетел и укрыл её крылом. Просто замечай такие моменты.');
+                    cat.activity='Греется'; dragon.activity='Греет кошку'; eventState.deadline=performance.now()+7000; break;
             }
+            return true;
         }
 
-        function clearEvent() {
-            activeEvent = null;
-            banner.style.display = 'none';
-            if (cat.state !== 'sleeping') {
-                cat.state = 'idle';
-                cat.activity = 'Осматривается';
-                cat.taskUntil = performance.now() + 1200;
-            }
-            if (dragon.state !== 'sleeping') {
-                dragon.state = 'idle';
-                dragon.activity = 'Осматривается';
-                dragon.taskUntil = performance.now() + 1200;
-            }
-            parcel = null;
-            seeds = [];
+        function finishEvent(message, friendship=0, mood=0, energy=0, hunger=0, cleanliness=0) {
+            if(message) showToast(message);
+            stats.friendship=Math.max(0,Math.min(100,stats.friendship+friendship));
+            stats.mood=Math.max(0,Math.min(100,stats.mood+mood));
+            stats.energy=Math.max(0,Math.min(100,stats.energy+energy));
+            stats.hunger=Math.max(0,Math.min(100,stats.hunger+hunger));
+            stats.cleanliness=Math.max(0,Math.min(100,stats.cleanliness+cleanliness));
+            world.phone.ringing=false; world.toy.hidden=false; world.hiddenToySpot=null;
+            activeEvent=null; eventState={}; parcel=null; seeds=[]; banner.style.display='none';
+            cat.state='idle'; dragon.state='idle'; cat.activity='Осматривается'; dragon.activity='Осматривается';
+            cat.taskUntil=performance.now()+1500; dragon.taskUntil=performance.now()+1500;
         }
 
-        // Таймер случайных ивентов
-        setInterval(() => {
-            if (activeEvent !== null) return;
-            const rand = Math.random();
-            if (rand < 0.15) triggerEvent(EVENTS.SPILLED_FOOD);
-            else if (rand < 0.28) triggerEvent(EVENTS.CANDLE_BLOWN);
-            else if (rand < 0.40) triggerEvent(EVENTS.POSTMAN);
-            else if (rand < 0.52) triggerEvent(EVENTS.CAT_GROOMING);
-            else if (rand < 0.64) triggerEvent(EVENTS.DRAGON_SNEEZE);
-            else if (rand < 0.75) triggerEvent(EVENTS.CAT_STUCK);
-            else if (rand < 0.85) triggerEvent(EVENTS.BLACKOUT);
-            else if (rand < 0.93) triggerEvent(EVENTS.ROLE_SWAP);
-            else triggerEvent(EVENTS.SNUGGLE_SLEEP);
-        }, 18000);
+        function updateEvents(now) {
+            if(activeEvent===null) {
+                // Пассивные и редкие события.
+                if(stats.energy<18) triggerEvent(EVENTS.SNUGGLE_SLEEP);
+                else if((stats.mood<35 || stats.warmth<35) && Math.random()<0.003) triggerEvent(EVENTS.DRAGON_WARM);
+                else if(now-windowCooldown>0 && Math.random()<0.0008) { windowCooldown=now+24*60*60*1000; triggerEvent(EVENTS.CAT_WINDOW); }
+                else if(now-postmanCooldown>0) { postmanCooldown=now+3*60*60*1000; triggerEvent(EVENTS.POSTMAN); }
+                else if(now-sneezeCooldown>0) { sneezeCooldown=now+24*60*60*1000; triggerEvent(EVENTS.DRAGON_SNEEZE); }
+                else if(Math.random()<0.0009) triggerEvent([EVENTS.SPILLED_FOOD,EVENTS.PHONE,EVENTS.CAT_GROOMING,EVENTS.CAT_STUCK,EVENTS.CAT_TABLE,EVENTS.CAT_TOY,EVENTS.CANDLE_BLOWN][Math.floor(Math.random()*7)]);
+                return;
+            }
+            const deadline=eventState.deadline||0;
+            if(deadline && now>deadline) {
+                if(activeEvent===EVENTS.SPILLED_FOOD && eventState.stage==='seeds') { showToast('Зёрна исчезли. Кошка загрустила.'); finishEvent(null,0,-8,0,-2); }
+                else if(activeEvent===EVENTS.CAT_GROOMING) finishEvent('Кошка закончила умываться. +Чистота +Настроение',0,5,0,0,10);
+                else if(activeEvent===EVENTS.CAT_WINDOW) finishEvent('Мур-р... Какой красивый вечер.',0,8);
+                else if(activeEvent===EVENTS.ROLE_SWAP) finishEvent('Герои хихикают. +Дружба',8,5);
+                else if(activeEvent===EVENTS.SNUGGLE_SLEEP) finishEvent('Они снова прижались. +Силы +Дружба',6,4,18);
+                else if(activeEvent===EVENTS.CANDLE_BLOWN) finishEvent('Кошка устала ждать. Настроение падает.',0,-10);
+                else if(activeEvent===EVENTS.DRAGON_SNEEZE) finishEvent('Огонь погас сам. Герои расстроены.',0,-12);
+                else if(activeEvent===EVENTS.PHONE) { world.phone.ringing=false; finishEvent('Автоответчик: «Ваш заказ готов…»',0,-3); }
+                else if(activeEvent===EVENTS.CAT_TABLE) finishEvent('Кошка передумала лезть на стол.',0,-2);
+                else if(activeEvent===EVENTS.CAT_TOY) { world.toy.hidden=false; finishEvent('Игрушку не нашли вовремя. Кошка вздыхает.',0,-4); }
+                else if(activeEvent===EVENTS.BLACKOUT) { world.candle.lit=true; finishEvent('Свет вернулся. Они устали, но горды.',15,3,-5); }
+                else if(activeEvent===EVENTS.POSTMAN) finishEvent('Почтальон ушёл. Кошка скребётся, дракончик нервничает.',0,-7);
+                else if(activeEvent===EVENTS.CAT_STUCK) finishEvent('Кошка обиделась, но выбралась сама.',-3,-5);
+                else if(activeEvent===EVENTS.DRAGON_WARM) finishEvent('Тепло и уютно.',3,4);
+                return;
+            }
+            // Анимации и автоматические переходы.
+            if(activeEvent===EVENTS.SPILLED_FOOD && eventState.stage==='brush') {
+                if(now>eventState.deadline) { eventState.stage='seeds'; seeds=[]; for(let i=0;i<Math.floor(3+Math.random()*3);i++) seeds.push({x:80+Math.random()*210,y:440+Math.random()*100,r:5,vx:(Math.random()-.5)*45,vy:(Math.random()-.5)*35}); eventState.deadline=now+9000; bannerEvent('ПОЙМАЙ КОРМ!','Тапай по разлетающимся зёрнам.'); cat.state='idle'; cat.activity='Слишком тяжело!'; }
+            } else if(activeEvent===EVENTS.SPILLED_FOOD && eventState.stage==='seeds') {
+                seeds.forEach(z=>{z.x+=z.vx*0.016;z.y+=z.vy*0.016;z.vx*=0.995;z.vy*=0.995;});
+            }
+            if(activeEvent===EVENTS.DRAGON_SNEEZE) eventState.fire=Math.min(1,eventState.fire+0.01);
+        }
 
         // Пассивное убывание статов
         setInterval(() => {
@@ -634,10 +631,18 @@
             ctx.strokeStyle = '#e0e0e0';
             ctx.stroke();
 
+            // Дополнительные предметы и сцены событий.
+            const br=world.brush; ctx.fillStyle='#777'; ctx.fillRect(br.x,br.y,br.w,br.h); ctx.strokeStyle='#eee'; ctx.strokeRect(br.x,br.y,br.w,br.h);
+            ctx.beginPath(); ctx.moveTo(br.x+2,br.y); ctx.lineTo(br.x-6,br.y-14); ctx.stroke();
+            const toy=world.toy; if(!toy.hidden){ctx.fillStyle='#ddd';ctx.fillRect(toy.x,toy.y,toy.w,toy.h);ctx.strokeStyle='#111';ctx.strokeRect(toy.x,toy.y,toy.w,toy.h);}
+            const lr=world.lighter; ctx.fillStyle='#777';ctx.fillRect(lr.x,lr.y,lr.w,lr.h);ctx.strokeStyle='#fff';ctx.strokeRect(lr.x,lr.y,lr.w,lr.h);
+            const stp=world.tableStep; if(activeEvent===EVENTS.CAT_TABLE && eventState.stepPlaced){ctx.fillStyle='#333';ctx.fillRect(stp.x,stp.y,stp.w,stp.h);ctx.strokeStyle='#aaa';ctx.strokeRect(stp.x,stp.y,stp.w,stp.h);}
+            if(activeEvent===EVENTS.CAT_TOY && world.hiddenToySpot){ctx.strokeStyle='#777';ctx.setLineDash([3,3]);ctx.strokeRect(world.hiddenToySpot.x-12,world.hiddenToySpot.y-12,44,36);ctx.setLineDash([]);}
+
             // Подсказки-кружочки на интерактивных объектах
             ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
             ctx.lineWidth = 1;
-            [c, m, bw, b].forEach(obj => {
+            (activeEvent === EVENTS.BLACKOUT ? [] : [c, m, bw, b, world.brush, world.toy, world.lighter]).forEach(obj => {
                 ctx.beginPath();
                 ctx.arc(obj.x + (obj.w||20)/2, obj.y + (obj.h||20)/2, 22, 0, Math.PI * 2);
                 ctx.stroke();
@@ -1053,144 +1058,55 @@
                 });
                 ctx.restore();
             }
+
+            // Атмосфера событий.
+            if(activeEvent===EVENTS.DRAGON_SNEEZE){ctx.fillStyle='rgba(120,20,20,0.22)';ctx.fillRect(GAME_WIDTH-90,GAME_HEIGHT-110,90,110);}
+            if(activeEvent===EVENTS.BLACKOUT){
+                ctx.fillStyle='rgba(0,0,0,0.94)';ctx.fillRect(0,0,GAME_WIDTH,GAME_HEIGHT);
+                const glow=ctx.createRadialGradient(dragon.x,dragon.y,4,dragon.x,dragon.y,80);glow.addColorStop(0,'rgba(255,255,255,.35)');glow.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=glow;ctx.beginPath();ctx.arc(dragon.x,dragon.y,80,0,Math.PI*2);ctx.fill();
+                ctx.strokeStyle='#777';ctx.lineWidth=1;ctx.beginPath();ctx.arc(world.mug.x+10,world.mug.y+12,18,0,Math.PI*2);ctx.stroke();
+            }
+            if(activeEvent===EVENTS.PHONE && world.phone.ringing){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.arc(world.phone.x+15,world.phone.y+22,22+Math.sin(performance.now()/80)*4,0,Math.PI*2);ctx.stroke();}
+            if(activeEvent===EVENTS.ROLE_SWAP){ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(cat.x+25,cat.y-20);ctx.lineTo(cat.x+60,cat.y-30);ctx.stroke();ctx.fillStyle='#fff';ctx.font='16px Courier New';ctx.fillText('FWOOSH!',cat.x+35,cat.y-35);}
         }
 
         // -------------------------------------------------------------
         // ОБРАБОТКА ВВОДА (КЛИКИ И ТАПЫ)
         // -------------------------------------------------------------
         canvas.addEventListener('pointerdown', (e) => {
-            const rect = canvas.getBoundingClientRect();
-            const clickX = (e.clientX - rect.left) / scale;
-            const clickY = (e.clientY - rect.top) / scale;
+            const rect=canvas.getBoundingClientRect();
+            const clickX=(e.clientX-rect.left)/scale, clickY=(e.clientY-rect.top)/scale;
+            const now=performance.now();
 
-            // Если открыто круговое меню, проверяем клик по опциям
-            if (radialMenu) {
-                const count = radialMenu.options.length;
-                const radius = 45;
-                let clickedOpt = false;
-
-                radialMenu.options.forEach((opt, idx) => {
-                    const angle = (idx / count) * Math.PI * 2 - Math.PI / 2;
-                    const ox = radialMenu.x + Math.cos(angle) * radius;
-                    const oy = radialMenu.y + Math.sin(angle) * radius;
-                    const dist = Math.hypot(clickX - ox, clickY - oy);
-                    if (dist < 20) {
-                        opt.action();
-                        clickedOpt = true;
-                    }
-                });
-
-                radialMenu = null;
-                if (clickedOpt) return;
+            if(radialMenu){
+                const count=radialMenu.options.length,radius=45; let clicked=false;
+                radialMenu.options.forEach((opt,idx)=>{const a=idx/count*Math.PI*2-Math.PI/2,ox=radialMenu.x+Math.cos(a)*radius,oy=radialMenu.y+Math.sin(a)*radius;if(Math.hypot(clickX-ox,clickY-oy)<20){opt.action();clicked=true;}});
+                radialMenu=null;if(clicked)return;
             }
 
-            // Логика активных ивентов
-            if (activeEvent === EVENTS.SPILLED_FOOD) {
-                // Сбор зёрен
-                for (let i = seeds.length - 1; i >= 0; i--) {
-                    const s = seeds[i];
-                    if (Math.hypot(clickX - s.x, clickY - s.y) < 20) {
-                        seeds.splice(i, 1);
-                        showToast('Зёрнышко собрано!');
-                        break;
-                    }
-                }
-                if (seeds.length === 0) {
-                    showToast('Всё собрано! +Дружба, -Голод!');
-                    stats.friendship = Math.min(100, stats.friendship + 8);
-                    stats.hunger = Math.min(100, stats.hunger + 15);
-                    clearEvent();
-                }
-                return;
+            if(activeEvent===EVENTS.SPILLED_FOOD){
+                if(eventState.stage==='brush' && clickX>35&&clickX<105&&clickY>360&&clickY<420){eventState.brushSwings++;cat.activity=eventState.brushSwings<3?'Машет щёткой':'Слишком тяжело!';if(eventState.brushSwings>=3){eventState.stage='seeds';seeds=[];for(let i=0;i<Math.floor(3+Math.random()*3);i++)seeds.push({x:80+Math.random()*210,y:440+Math.random()*100,r:5,vx:(Math.random()-.5)*55,vy:(Math.random()-.5)*40});eventState.deadline=now+9000;bannerEvent('ПОЙМАЙ КОРМ!','Тапай по 3–5 зёрнам.');}return;}
+                if(eventState.stage==='seeds'){for(let i=seeds.length-1;i>=0;i--){if(Math.hypot(clickX-seeds[i].x,clickY-seeds[i].y)<18){seeds.splice(i,1);showToast('Поймано!');break;}}if(!seeds.length){finishEvent('Всё поймано! Радость! +Дружба',8,10,0,-6);return;}return;}
             }
+            if(activeEvent===EVENTS.POSTMAN && parcel && clickX>=parcel.x&&clickX<=parcel.x+parcel.w&&clickY>=parcel.y&&clickY<=parcel.y+parcel.h){finishEvent('Корм и маленькая игрушка! Герои счастливы.',10,12,0,20);return;}
+            if(activeEvent===EVENTS.CANDLE_BLOWN && !world.candle.lit){const c=world.candle;if(clickX>c.x-15&&clickX<c.x+c.w+15&&clickY>c.y-15&&clickY<c.y+c.h+15){world.candle.lit=true;finishEvent('Свет вернулся. Кошка прижалась.',5,8);return;}}
+            if(activeEvent===EVENTS.PHONE && clickX>world.phone.x-15&&clickX<world.phone.x+45&&clickY>world.phone.y-15&&clickY<world.phone.y+65){finishEvent('Автоответчик: «Ваш заказ готов…»',2,2);return;}
+            if(activeEvent===EVENTS.SNUGGLE_SLEEP){eventState.tapped=true;cat.activity='Вздрагивает';dragon.activity='Вздрагивает';setTimeout(()=>{if(activeEvent===EVENTS.SNUGGLE_SLEEP){cat.activity='Снова прижалась';dragon.activity='Снова прижался';}},400);return;}
+            if(activeEvent===EVENTS.BLACKOUT){const hit=(x,y,w,h)=>clickX>x-12&&clickX<x+w+12&&clickY>y-12&&clickY<y+h+12;if(hit(world.mug.x,world.mug.y,world.mug.w,world.mug.h)||hit(world.lighter.x,world.lighter.y,world.lighter.w,world.lighter.h)||hit(world.box.x,world.box.y,world.box.w,world.box.h)){eventState.found=true;finishEvent('Нашли предмет! Свет возвращается позже.');return;}return;}
+            if(activeEvent===EVENTS.DRAGON_SNEEZE){const m=world.mug;if(clickX>m.x-18&&clickX<m.x+m.w+18&&clickY>m.y-18&&clickY<m.y+m.h+18){finishEvent('Кошка тушит уголок! Герои смеются.',10,6);return;}return;}
+            if(activeEvent===EVENTS.CAT_STUCK){const b=world.box;if(clickX>b.x&&clickX<b.x+b.w&&clickY>b.y&&clickY<b.y+b.h){eventState.gentle++;if(eventState.gentle>=2){finishEvent('Кошка выбралась. +Дружба',7,3);return;}showToast('Ещё чуть-чуть, аккуратно!');return;}if(Math.hypot(clickX-world.bowl.x-world.bowl.w/2,clickY-world.bowl.y-world.bowl.h/2)<35){finishEvent('Кошка увидела миску и выбралась!',8,5,0,8);return;}return;}
+            if(activeEvent===EVENTS.CAT_GROOMING){finishEvent('Ты не мешал. Кошка довольна!',0,5,0,0,10);return;}
+            if(activeEvent===EVENTS.CAT_WINDOW){finishEvent('Она отвлеклась и ушла.',0,-2);return;}
+            if(activeEvent===EVENTS.CAT_TABLE){if(clickX>85&&clickX<165&&clickY>375&&clickY<430){eventState.stepPlaced=true;cat.targetX=125;cat.targetY=390;cat.state='walking';cat.activity='Забирается на ступеньку';setTimeout(()=>{if(activeEvent===EVENTS.CAT_TABLE)finishEvent('Получилось! Кошка довольна.',5,5);},2500);return;}return;}
+            if(activeEvent===EVENTS.CAT_TOY && world.hiddenToySpot){if(clickX>world.hiddenToySpot.x-15&&clickX<world.hiddenToySpot.x+35&&clickY>world.hiddenToySpot.y-15&&clickY<world.hiddenToySpot.y+35){finishEvent('Игрушка найдена! +Дружба и маленькая награда.',8,8,0,5);return;}return;}
+            if(activeEvent===EVENTS.ROLE_SWAP||activeEvent===EVENTS.DRAGON_WARM)return;
 
-            if (activeEvent === EVENTS.POSTMAN && parcel) {
-                if (clickX >= parcel.x && clickX <= parcel.x + parcel.w &&
-                    clickY >= parcel.y && clickY <= parcel.y + parcel.h) {
-                    showToast('Посылка открыта! Лакомства + Игрушка!');
-                    stats.hunger = Math.min(100, stats.hunger + 25);
-                    stats.mood = Math.min(100, stats.mood + 20);
-                    stats.friendship = Math.min(100, stats.friendship + 10);
-                    clearEvent();
-                    return;
-                }
-            }
-
-            if ((activeEvent === EVENTS.CANDLE_BLOWN || activeEvent === EVENTS.BLACKOUT) && !world.candle.lit) {
-                const c = world.candle;
-                if (clickX >= c.x - 10 && clickX <= c.x + c.w + 10 &&
-                    clickY >= c.y - 10 && clickY <= c.y + c.h + 10) {
-                    world.candle.lit = true;
-                    showToast('Свеча зажжена! Тепло и уют вернулись.');
-                    stats.mood = Math.min(100, stats.mood + 15);
-                    stats.friendship = Math.min(100, stats.friendship + 5);
-                    clearEvent();
-                    return;
-                }
-            }
-
-            if (activeEvent === EVENTS.DRAGON_SNEEZE) {
-                const m = world.mug;
-                if (clickX >= m.x - 15 && clickX <= m.x + m.w + 15 &&
-                    clickY >= m.y - 15 && clickY <= m.y + m.h + 15) {
-                    showToast('Огонь потушен! Дракончик спасён!');
-                    stats.friendship = Math.min(100, stats.friendship + 12);
-                    clearEvent();
-                    return;
-                }
-            }
-
-            if (activeEvent === EVENTS.CAT_STUCK) {
-                const b = world.box;
-                if (clickX >= b.x && clickX <= b.x + b.w && clickY >= b.y && clickY <= b.y + b.h) {
-                    showToast('Кошка вызволена из коробки!');
-                    stats.friendship = Math.min(100, stats.friendship + 7);
-                    clearEvent();
-                    return;
-                }
-            }
-
-            if (activeEvent === EVENTS.SNUGGLE_SLEEP) {
-                showToast('Мур-р... Малыши отдыхают.');
-                stats.energy = Math.min(100, stats.energy + 20);
-                stats.friendship = Math.min(100, stats.friendship + 5);
-                return;
-            }
-
-            // Клик по Кошке
-            if (Math.hypot(clickX - cat.x, clickY - cat.y) < 35) {
-                radialMenu = {
-                    x: cat.x,
-                    y: cat.y - 20,
-                    options: [
-                        { label: 'Гладить', action: () => { stats.mood = Math.min(100, stats.mood + 10); cat.activity = 'Мурчит'; cat.taskUntil = performance.now() + 1800; showToast('Кошка мурчит!'); } },
-                        { label: 'Играть', action: () => { stats.mood = Math.min(100, stats.mood + 15); stats.energy = Math.max(0, stats.energy - 10); cat.activity = 'Играет'; cat.taskUntil = performance.now() + 2200; showToast('Весёлая игра!'); } },
-                        { label: 'Помыть', action: () => { stats.cleanliness = Math.min(100, stats.cleanliness + 25); cat.activity = 'Умывается'; cat.taskUntil = performance.now() + 2200; showToast('Кошка чистая!'); } }
-                    ]
-                };
-                return;
-            }
-
-            // Клик по Дракончику
-            if (Math.hypot(clickX - dragon.x, clickY - dragon.y) < 30) {
-                radialMenu = {
-                    x: dragon.x,
-                    y: dragon.y - 20,
-                    options: [
-                        { label: 'Погреть', action: () => { stats.warmth = Math.min(100, stats.warmth + 20); showToast('Дракончик греет лапки!'); } },
-                        { label: 'Угостить', action: () => { stats.hunger = Math.min(100, stats.hunger + 10); showToast('Дракончик доволен!'); } }
-                    ]
-                };
-                return;
-            }
-
-            // Клик по миске с едой
-            const bw = world.bowl;
-            if (Math.hypot(clickX - (bw.x + bw.w/2), clickY - (bw.y + bw.h/2)) < 30) {
-                stats.hunger = Math.min(100, stats.hunger + 30);
-                showToast('Миска заполнена кормом!');
-                return;
-            }
+            if(Math.hypot(clickX-cat.x,clickY-cat.y)<35){radialMenu={x:cat.x,y:cat.y-20,options:[
+                {label:'Гладить',action:()=>{stats.mood=Math.min(100,stats.mood+10);cat.activity='Мурчит';cat.taskUntil=now+1800;showToast('Кошка мурчит!');}},
+                {label:'Играть',action:()=>{stats.mood=Math.min(100,stats.mood+15);stats.energy=Math.max(0,stats.energy-10);cat.activity='Играет';cat.taskUntil=now+2200;showToast('Весёлая игра!');}},
+                {label:'Помыть',action:()=>{stats.cleanliness=Math.min(100,stats.cleanliness+25);cat.activity='Умывается';cat.taskUntil=now+2200;showToast('Кошка чистая!');}}]};return;}
+            if(Math.hypot(clickX-dragon.x,clickY-dragon.y)<30){radialMenu={x:dragon.x,y:dragon.y-20,options:[{label:'Погреть',action:()=>{stats.warmth=Math.min(100,stats.warmth+20);showToast('Дракончик греет лапки!');}},{label:'Угостить',action:()=>{stats.hunger=Math.min(100,stats.hunger+10);showToast('Дракончик доволен!');}}]};return;}
+            const bw=world.bowl;if(Math.hypot(clickX-(bw.x+bw.w/2),clickY-(bw.y+bw.h/2))<30){stats.hunger=Math.min(100,stats.hunger+30);showToast('Миска заполнена кормом!');return;}
         });
 
         // -------------------------------------------------------------
@@ -1203,6 +1119,7 @@
             lastFrame = now;
 
             updateLivingWorld(now, dt);
+            updateEvents(now);
 
             ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
             drawBackground();
