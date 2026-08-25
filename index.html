@@ -647,6 +647,10 @@ canvas.addEventListener("pointerdown",e=>{
     if(activeEvent===EVENTS.SNUGGLE){
         stats.friendship=clamp(stats.friendship+2);toastMsg("Шшш… они снова прижались.");return;
     }
+    if(activeEvent===EVENTS.WARM){
+        stats.warmth=clamp(stats.warmth+12, 20);
+        return;
+    }
     if(activeEvent===EVENTS.PHONE && hit(zones.tv,x,y,20)){
         phoneRinging=false;stats.mood=clamp(stats.mood+3);toastMsg("«Ваш заказ готов…»");finishEvent();return;
     }
