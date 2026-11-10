@@ -45,42 +45,19 @@ catSheet.src = "./cat_sprites.png";
 
 // Координаты кадров NG 1136x1385
 const CAT_ATLAS = {
-    idle: {
-        y: 7, h: 158,
-        xs: [[28,134],[168,273],[309,411],
-             [449,546],[588,681],[728,822]],
-        fps: 3
-    },
-    walk: {
-        y: 191, h: 131,
-        xs: [[15,143],[158,286],[303,429],[441,569],
-             [580,710],[719,842],[860,988],[1004,1125]],
-        fps: 9
-    },
-    run: {
-        y: 346, h: 130,
-        xs: [[16,130],[158,267],[296,414],[439,557],
-             [584,703],[727,842],[866,980],[1003,1121]],
-        fps: 12
-    },
-    lie: {
-        y: 665, h: 126,
-        xs: [[12,128],[168,291],[315,422],
-             [451,565],[599,710]],
-        fps: 3
-    },
-    sleep: {
-        y: 810, h: 111,
-        xs: [[10,141],[162,285],[310,437],[455,577],
-             [599,707],[725,855],[875,980],[996,1118]],
-        fps: 2
-    },
-    jump: {
-        y: 1100, h: 116,
-        xs: [[18,157],[170,308],[321,454],[472,594],
-             [613,736],[745,885],[903,1007]],
-        fps: 11
-    }
+    // Точные строки нового cat_sprites.png (1136 x 1385).
+    idle: {y:7,h:138,xs:[[32,131],[174,270],[311,407],[446,542],[578,673],[715,813]],fps:3},
+    walk: {y:159,h:109,xs:[[17,140],[164,284],[303,429],[442,565],[579,702],[714,834],[848,974],[992,1112]],fps:9},
+    run: {y:276,h:113,xs:[[18,126],[158,264],[297,411],[437,550],[579,698],[719,833],[859,974],[993,1117]],fps:12},
+    greet: {y:396,h:125,xs:[[31,125],[169,260],[308,402],[442,542],[585,682],[719,818],[869,980],[1010,1101]],fps:6},
+    groom: {y:529,h:127,xs:[[26,121],[157,249],[290,385],[428,517],[562,656],[703,796],[847,938],[983,1076]],fps:6},
+    play_paw: {y:669,h:132,xs:[[33,129],[175,273],[319,437],[468,578],[615,730],[769,866],[926,1021]],fps:6},
+    play_yarn: {y:809,h:111,xs:[[9,126],[137,264],[272,397],[398,519],[526,640],[649,764],[769,884],[887,1006],[1011,1127]],fps:7},
+    fall_asleep: {y:933,h:97,xs:[[19,151],[169,312],[324,446],[462,584],[602,711],[729,848],[868,982],[1002,1108]],fps:5,loop:false},
+    lie: {y:933,h:97,xs:[[462,584],[602,711]],fps:2},
+    sleep: {y:933,h:97,xs:[[868,982],[1002,1108]],fps:1},
+    jump: {y:1166,h:93,xs:[[23,153],[174,298],[317,444],[460,580],[597,713],[730,862],[876,991]],fps:11},
+    turn: {y:1267,h:113,xs:[[29,138],[160,261],[304,394],[439,536],[593,704],[729,817],[890,994]],fps:4}
 };
 
 
@@ -308,7 +285,14 @@ function autonomousLife(now, dt) {
             cat.targetX = cat.x;
             cat.targetY = cat.y;
             cat.taskUntil = now + 4500 + Math.random() * 4000;
-        } else if (action < 0.22) {
+        } else if (action < 0.18) {
+            cat.state = "playing_paw";
+            cat.activity = "Играет лапкой";
+            cat.targetX = cat.x;
+            cat.targetY = cat.y;
+            cat.anim = 0;
+            cat.taskUntil = now + 2100;
+        } else if (action < 0.28) {
             cat.state = "lying";
             cat.activity = "Отдыхает";
             cat.targetX = cat.x;
@@ -329,6 +313,8 @@ function move(ch,dt){
         ch.state === "sleeping" ||
         ch.state === "lying" ||
         ch.state === "grooming" ||
+        ch.state === "playing" ||
+        ch.state === "playing_paw" ||
         ch.state === "stuck" ||
         ch.state === "role" ||
         ch.state === "blackout" ||
@@ -429,26 +415,32 @@ function petShadow(w,h=6){
 }
 
 
+// Отдельный счётчик нужен только для перехода в сон.
+// Остальные состояния продолжают использовать проверенную cat.anim.
+let previousCatState = null;
+let sleepStartedAt = 0;
+
 function getCatAnimation() {
+    if (cat.state !== previousCatState) {
+        if (cat.state === "sleeping") sleepStartedAt = performance.now();
+        previousCatState = cat.state;
+    }
     switch (cat.state) {
-        case "walking":
-            return "walk";
-        case "running":
-            return "run";
-        case "sleeping":
-            return "sleep";
-        case "lying":
-            return "lie";
-        case "playing":
-        case "jumping":
-            return "jump";
-        case "grooming":
-        case "brushing":
-            return "lie";
-        case "stuck":
-            return "lie";
-        default:
-            return "idle";
+        case "walking": return "walk";
+        case "running": return "run";
+        case "sleeping": {
+            const t = (performance.now() - sleepStartedAt) / 1000;
+            const intro = CAT_ATLAS.fall_asleep;
+            return t < intro.xs.length / intro.fps ? "fall_asleep" : "sleep";
+        }
+        case "lying": return "lie";
+        case "playing": return "play_yarn";
+        case "playing_paw": return "play_paw";
+        case "jumping": return "jump";
+        case "grooming": return "groom";
+        case "brushing": return "groom";
+        case "stuck": return "lie";
+        default: return "idle";
     }
 }
 
@@ -458,7 +450,10 @@ function drawCat() {
     const animation = getCatAnimation();
     const data = CAT_ATLAS[animation];
 
-    const frame = Math.floor(cat.anim * data.fps) % data.xs.length;
+    // Не зацикливаем переход в сон; после него показываем спящий спрайт.
+    const frame = animation === "fall_asleep"
+        ? Math.min(Math.floor((performance.now() - sleepStartedAt) / 1000 * data.fps), data.xs.length - 1)
+        : Math.floor(cat.anim * data.fps) % data.xs.length;
     const [x1, x2] = data.xs[frame];
 
     const padding = 3;
@@ -498,7 +493,7 @@ function drawCat() {
         catSheet,
         sx, sy, sw, sh,
         Math.round(-dw / 2),
-        Math.round(23 - dh),
+        Math.round(-12 - dh),
         Math.round(dw),
         Math.round(dh)
     );
@@ -750,7 +745,15 @@ canvas.addEventListener("pointerdown",e=>{
                     toastMsg("Кошка играет!");
                 }
             },
-            {label:"УМЫТЬ",action:()=>{stats.cleanliness=clamp(stats.cleanliness+10);cat.activity="Умывается";toastMsg("Чистая и довольная.")}}
+            {label:"УМЫТЬ",action:()=>{
+                stats.cleanliness=clamp(stats.cleanliness+10);
+                cat.state="grooming";
+                cat.activity="Умывается";
+                cat.targetX=cat.x;cat.targetY=cat.y;
+                cat.anim=0;
+                cat.taskUntil=performance.now()+2600;
+                toastMsg("Чистая и довольная.");
+            }}
         ]};return;
     }
     // if(Math.hypot(x-dragon.x,y-dragon.y)<32){
